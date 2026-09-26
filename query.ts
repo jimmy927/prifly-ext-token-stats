@@ -97,26 +97,29 @@ export function filtered(cols: Columns, filters: Filters): Int32Array {
 }
 
 /**
- * A colour slot per value, by its all-time output: the same account keeps
- * its colour whatever is filtered, and the biggest get the first slots.
+ * A colour slot per value, by its all-time output: the same value keeps its
+ * colour whatever is filtered, and the biggest get the first slots.
  */
 export function colourSlots(cols: Columns): Record<Dimension, Int32Array> {
-  return Object.fromEntries(
-    DIMENSIONS.map((dim) => {
-      const totals = new Float64Array(cols.names[dim].length);
-      const codes = cols.codes[dim];
-      for (let i = 0; i < cols.length; i++) {
-        const code = codes[i] ?? 0;
-        totals[code] = (totals[code] ?? 0) + (cols.output[i] ?? 0);
-      }
-      const order = [...totals.keys()].sort((a, b) => (totals[b] ?? 0) - (totals[a] ?? 0));
-      const slots = new Int32Array(totals.length);
-      order.forEach((code, rank) => {
-        slots[code] = rank;
-      });
-      return [dim, slots];
-    }),
-  ) as Record<Dimension, Int32Array>;
+  return Object.fromEntries(DIMENSIONS.map((dim) => [dim, bySize(cols, dim)])) as Record<
+    Dimension,
+    Int32Array
+  >;
+}
+
+function bySize(cols: Columns, dim: Dimension): Int32Array {
+  const totals = new Float64Array(cols.names[dim].length);
+  const codes = cols.codes[dim];
+  for (let i = 0; i < cols.length; i++) {
+    const code = codes[i] ?? 0;
+    totals[code] = (totals[code] ?? 0) + (cols.output[i] ?? 0);
+  }
+  const order = [...totals.keys()].sort((a, b) => (totals[b] ?? 0) - (totals[a] ?? 0));
+  const slots = new Int32Array(totals.length);
+  order.forEach((code, rank) => {
+    slots[code] = rank;
+  });
+  return slots;
 }
 
 /** A value as the window shows it: a session by its title. */
