@@ -126,14 +126,20 @@ export function niceMax(v) {
   return [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map((m) => m * p).find((x) => x >= v) ?? v;
 }
 
+/** A model's family shade (`--m-opus-0`), the one colour a series or row has of its own. */
+export const toneColour = (tone) => `var(--m-${tone})`;
+
 /**
- * The colour of each series: its all-time slot when that is one of the eight,
- * otherwise the first slot no other series on screen has, and grey for the rest.
+ * The colour of each series: a model's family shade when it has one, else its
+ * all-time slot when that is one of the eight, otherwise the first slot no
+ * other series on screen has, and grey for the rest.
  */
 export function colours(series) {
-  const taken = new Set(series.filter((s) => s.slot >= 0 && s.slot < SLOTS).map((s) => s.slot));
+  const slotted = series.filter((s) => s.tone == null);
+  const taken = new Set(slotted.filter((s) => s.slot >= 0 && s.slot < SLOTS).map((s) => s.slot));
   const free = [...Array(SLOTS).keys()].filter((k) => !taken.has(k));
   return series.map((s) => {
+    if (s.tone != null) return toneColour(s.tone);
     if (s.slot >= 0 && s.slot < SLOTS) return `var(--s${s.slot})`;
     if (s.slot >= SLOTS && free.length > 0) return `var(--s${free.shift()})`;
     return "var(--other)";

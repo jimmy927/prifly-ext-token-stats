@@ -21,6 +21,26 @@
   --s6: #4a3aa7;
   --s7: #e34948;
   --other: #b4b8bf;
+  /* Model families, newest version first (tones.ts). Anthropic gives its
+     models no colours of their own (Claude Code 2.1.283's themes,
+     anthropic.com/claude/*, checked 2026-09-27), so each family takes one of
+     Anthropic's colours: Opus the brand blue #6a9bcc (anthropics/skills
+     brand-guidelines; Claude Code's `professionalBlue`), Fable, Sonnet and
+     Haiku Claude Code's amber #ca8a04, pink #c46686 and green #16a34a
+     (`yellow_`, `pink_`, `green_FOR_SUBAGENTS_ONLY`). Older versions step
+     0.11 OKLCH lightness away from the surface, with 15% less chroma, each. */
+  --m-opus-0: #6697c7; /* #6a9bcc darkened to 3:1 on white */
+  --m-opus-1: #4d759d;
+  --m-opus-2: #365574;
+  --m-fable-0: #c48609; /* #ca8a04 darkened to 3:1 on white */
+  --m-fable-1: #9a6800;
+  --m-fable-2: #724c01;
+  --m-sonnet-0: #c46686;
+  --m-sonnet-1: #984c66;
+  --m-sonnet-2: #6f3448;
+  --m-haiku-0: #16a34a;
+  --m-haiku-1: #027e35;
+  --m-haiku-2: #025924;
 }
 :root.dark {
   color-scheme: dark;
@@ -41,6 +61,18 @@
   --s6: #9085e9;
   --s7: #e66767;
   --other: #545a63;
+  --m-opus-0: #6a9bcc;
+  --m-opus-1: #93bde8;
+  --m-opus-2: #c2e0ff;
+  --m-fable-0: #ca8a04;
+  --m-fable-1: #e7af5b;
+  --m-fable-2: #ffd7a0;
+  --m-sonnet-0: #c46686;
+  --m-sonnet-1: #e18ea8;
+  --m-sonnet-2: #feb6cb;
+  --m-haiku-0: #16a34a;
+  --m-haiku-1: #5fc376;
+  --m-haiku-2: #94e3a2;
 }
 
 * {

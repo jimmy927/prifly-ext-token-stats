@@ -3,7 +3,16 @@
 
 import { drawChart } from "./chart.js";
 import { drawHeat, drawOverview, drawTable } from "./extras.js";
-import { colours, esc, fmt, measureIsCost, rangeName, val, widthName } from "./format.js";
+import {
+  colours,
+  esc,
+  fmt,
+  measureIsCost,
+  rangeName,
+  toneColour,
+  val,
+  widthName,
+} from "./format.js";
 import { openPicker } from "./picker.js";
 
 const SEC = 1000;
@@ -167,8 +176,12 @@ function draw() {
   drawLegend(visible);
   drawChart(document.getElementById("chart"), answer, visible, { onZoom: zoomTo, onBack: back });
   drawOverview(document.getElementById("overview"), answer, zoomTo);
-  const colourOf = (key) =>
-    visible.allColours[visible.all.findIndex((s) => s.key === key)] ?? "var(--other)";
+  // A model beyond the chart's top lines still wears its own shade in the table.
+  const colourOf = (key) => {
+    const tone = answer.rows.find((r) => r.key === key)?.tone;
+    if (tone != null) return toneColour(tone);
+    return visible.allColours[visible.all.findIndex((s) => s.key === key)] ?? "var(--other)";
+  };
   document.getElementById("table-title").textContent =
     `By ${splitName.toLowerCase()} in this stretch`;
   drawTable(

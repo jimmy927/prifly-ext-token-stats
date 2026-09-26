@@ -16,12 +16,22 @@ import {
   type QueryParams,
 } from "./query";
 import { type Columns, DIMENSIONS, type Dimension } from "./store";
+import { modelTones } from "./tones";
 
-export type Series = { key: string; label: string; slot: number; values: number[]; total: number };
+/** `tone` is a model's family shade (`opus-0`), which the page prefers to the slot; see `tones.ts`. */
+export type Series = {
+  key: string;
+  label: string;
+  slot: number;
+  tone: string | null;
+  values: number[];
+  total: number;
+};
 export type Row = {
   key: string;
   label: string;
   slot: number;
+  tone: string | null;
   /** Dollars at API list prices, unpriced models' calls left out. */
   cost: number;
   output: number;
@@ -51,6 +61,7 @@ const MAX_BUCKETS = 1500;
 
 export class Answerer {
   private readonly slots: Record<Dimension, Int32Array>;
+  private readonly tones: (string | null)[];
   private readonly span: { min: number; max: number };
   private readonly facetCache = new Map<Metric, Answer["facets"]>();
   private readonly cols: Columns;
@@ -58,6 +69,7 @@ export class Answerer {
   constructor(cols: Columns) {
     this.cols = cols;
     this.slots = colourSlots(cols);
+    this.tones = modelTones(cols.names.model);
     let min = Number.POSITIVE_INFINITY;
     let max = 0;
     for (const ts of cols.ts) {
@@ -121,6 +133,10 @@ export class Answerer {
     return split === "none" ? 0 : (this.slots[split][code] ?? 0);
   }
 
+  private toneOf(split: Dimension | "none", code: number): string | null {
+    return split === "model" ? (this.tones[code] ?? null) : null;
+  }
+
   /** Each value's buckets, in the shown stretch. */
   private bucketed(
     inRange: Int32Array,
@@ -163,6 +179,7 @@ export class Answerer {
       key: split === "none" ? "all" : (this.cols.names[split][code] ?? "?"),
       label: labelOf(this.cols, split, code),
       slot: this.slotOf(split, code),
+      tone: this.toneOf(split, code),
       values: [...values],
       total,
     }));
@@ -175,7 +192,14 @@ export class Answerer {
     const total = values.reduce((a, b) => a + b, 0);
     return [
       ...shown,
-      { key: "\u0000other", label: `${rest.length} more`, slot: OTHER_SLOT, values, total },
+      {
+        key: "\u0000other",
+        label: `${rest.length} more`,
+        slot: OTHER_SLOT,
+        tone: null,
+        values,
+        total,
+      },
     ];
   }
 
@@ -201,6 +225,7 @@ export class Answerer {
           key: split === "none" ? "all" : (this.cols.names[split][code] ?? "?"),
           label: labelOf(this.cols, split, code),
           slot: this.slotOf(split, code),
+          tone: this.toneOf(split, code),
           cost: 0,
           output: 0,
           input: 0,
