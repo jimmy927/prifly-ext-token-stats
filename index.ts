@@ -12,6 +12,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Answerer, readParams } from "./answer";
+import { applyScan } from "./archive";
 import type { ExtensionApi, PanelRequest } from "./prifly-api";
 import { RemoteSessions } from "./remote";
 import type { FileOut, ScanReply, ScanRequest } from "./scan-worker";
@@ -23,6 +24,8 @@ const REMOTE_EVERY = 10 * 60_000;
 type Running = {
   worker: Worker;
   local: Map<string, FileOut>;
+  /** Transcripts Claude Code has deleted, kept by the worker: counted like the live ones. */
+  archived: Map<string, FileOut>;
   remote: RemoteSessions;
   answerer: Answerer | null;
   scanning: Promise<void> | null;
@@ -34,8 +37,8 @@ type Running = {
 
 let running: Running | null = null;
 
-function localBatches(local: Map<string, FileOut>): Batch[] {
-  return [...local.values()].map((file) => ({
+function localBatches(state: Running): Batch[] {
+  return [...state.local.values(), ...state.archived.values()].map((file) => ({
     sessionId: file.sessionId,
     title: file.title,
     source: "local",
@@ -47,7 +50,7 @@ function localBatches(local: Map<string, FileOut>): Batch[] {
 function answerer(state: Running): Answerer {
   if (state.answerer === null) {
     state.answerer = new Answerer(
-      buildColumns([...localBatches(state.local), ...state.remote.batches()]),
+      buildColumns([...localBatches(state), ...state.remote.batches()]),
     );
   }
   return state.answerer;
@@ -63,9 +66,7 @@ function scanLocal(state: Running): Promise<void> {
 }
 
 function received(state: Running, reply: ScanReply, log: ExtensionApi["log"]): void {
-  for (const file of reply.files) state.local.set(file.path, file);
-  for (const path of reply.removed) state.local.delete(path);
-  if (reply.files.length > 0 || reply.removed.length > 0) state.answerer = null;
+  if (applyScan(state.local, state.archived, reply)) state.answerer = null;
   state.lastScan = reply.stats;
   state.scannedAt = Date.now();
   log("scanned", reply.stats);
@@ -83,6 +84,7 @@ export function activate(api: ExtensionApi): () => void {
   const state: Running = {
     worker,
     local: new Map(),
+    archived: new Map(),
     remote: new RemoteSessions(api.cloud, join(api.folder, "cache", "remote.json"), api.log),
     answerer: null,
     scanning: null,
@@ -93,6 +95,7 @@ export function activate(api: ExtensionApi): () => void {
       type: "scan",
       root: join(homedir(), ".claude", "projects"),
       cacheFile: join(api.folder, "cache", "local.json"),
+      archiveFile: join(api.folder, "cache", "archive.json"),
     },
   };
   worker.onmessage = (event: MessageEvent<ScanReply>) => received(state, event.data, api.log);
@@ -122,6 +125,7 @@ function status(state: Running) {
     scannedAt: state.scannedAt,
     local: state.lastScan,
     sessions: state.local.size,
+    archived: state.archived.size,
     remote: {
       sessions: state.remote.count,
       readAt: state.remote.readAt,

@@ -14,37 +14,37 @@
 
 import { lstatSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { accountAt, freshState, type ReaderState, readText, type Usage } from "./parse";
+import { type FileOut, loadArchive, saveArchive, settleArchive } from "./archive";
+import { accountAt, freshState, type ReaderState, readText } from "./parse";
 
 declare const self: Worker;
 
-export type FileOut = {
-  path: string;
-  sessionId: string;
-  /** The session a sub-agent's transcript belongs to; null for a session's own. */
-  parentId: string | null;
-  title: string;
-  usages: Usage[];
-};
+export type { FileOut } from "./archive";
 
 type FileState = FileOut & { size: number; mtime: number; offset: number; reader: ReaderState };
 
-export type ScanRequest = { type: "scan"; root: string; cacheFile: string };
+export type ScanRequest = { type: "scan"; root: string; cacheFile: string; archiveFile: string };
 export type ScanReply = {
   type: "scanned";
   /** Files that changed since the last reply — all of them in the first. */
   files: FileOut[];
   removed: string[];
+  /** Files Claude Code deleted, kept: those newly archived, and the whole archive in the first. */
+  archived: FileOut[];
+  /** Archived paths that are on disk again, and counted from there now. */
+  reclaimed: string[];
   stats: { files: number; read: number; bytes: number; ms: number };
 };
 
 const CACHE_VERSION = 1;
 const files = new Map<string, FileState>();
+const archive = new Map<string, FileOut>();
 let loaded = false;
 let first = true;
 
-async function loadCache(cacheFile: string): Promise<void> {
+async function loadCache(cacheFile: string, archiveFile: string): Promise<void> {
   loaded = true;
+  for (const file of await loadArchive(archiveFile)) archive.set(file.path, file);
   const raw: unknown = await Bun.file(cacheFile)
     .json()
     .catch(() => null);
@@ -126,7 +126,7 @@ function findSession(id: string): FileState | null {
 
 async function scan(request: ScanRequest): Promise<ScanReply> {
   const started = performance.now();
-  if (!loaded) await loadCache(request.cacheFile);
+  if (!loaded) await loadCache(request.cacheFile, request.archiveFile);
   const { main, agents } = listTranscripts(request.root);
   const changed: FileOut[] = [];
   let bytes = 0;
@@ -139,16 +139,35 @@ async function scan(request: ScanRequest): Promise<ScanReply> {
   }
   const present = new Set([...main, ...agents]);
   const removed = [...files.keys()].filter((path) => !present.has(path));
+  // Only a path that was read reclaims its archived copy: one that failed to read keeps it.
+  const live = new Set([...present].filter((path) => files.has(path)));
+  const { archived, reclaimed } = await keep(removed, live, request.archiveFile);
   for (const path of removed) files.delete(path);
   if (bytes > 0 || removed.length > 0) await saveCache(request.cacheFile);
-  first = false;
   const ms = Math.round(performance.now() - started);
-  return {
+  const reply: ScanReply = {
     type: "scanned",
     files: changed,
     removed,
+    archived: first ? [...archive.values()] : archived,
+    reclaimed,
     stats: { files: present.size, read: changed.length, bytes, ms },
   };
+  first = false;
+  return reply;
+}
+
+/** Transcripts that left the disk go into the archive, which is written only when it changed. */
+async function keep(removed: string[], live: ReadonlySet<string>, archiveFile: string) {
+  const gone = removed.flatMap((path) => {
+    const state = files.get(path);
+    return state === undefined ? [] : [strip(state)];
+  });
+  const settled = settleArchive(archive, gone, live);
+  if (settled.archived.length > 0 || settled.reclaimed.length > 0) {
+    await saveArchive(archiveFile, archive.values());
+  }
+  return settled;
 }
 
 function strip(state: FileState): FileOut {

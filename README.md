@@ -28,6 +28,14 @@ counted once, by its message id.
   of a few gigabytes takes about 15 seconds. After that only the files that
   grew are read, from where the last read stopped, and a cache in `cache/`
   keeps the results across host restarts.
+- **History is kept for good.** Claude Code deletes transcripts older than
+  `cleanupPeriodDays` (30 by default). When a transcript goes, what was read
+  from it moves to `cache/archive.json` in the extension's folder and keeps
+  counting in every chart, split and filter; the status line says how many
+  are archived. The archive is a file of its own, so deleting `local.json`
+  only makes the next read slower. If an archived transcript comes back to
+  the same path, the file is counted and its archived copy dropped. Remote
+  sessions likewise stay counted after they leave the API's listing.
 - **Remote** sessions (Claude Code on the web) are read through prifly's
   connected Claude accounts, each with its own token. A session is fetched
   again only when it has changed since.

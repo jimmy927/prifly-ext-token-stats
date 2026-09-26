@@ -19,6 +19,10 @@ type Held = { info: CloudSessionInfo; usages: Usage[] };
 const CACHE_VERSION = 1;
 
 export class RemoteSessions {
+  /**
+   * Every session ever read, kept for good: one that drops out of the API's
+   * listing (deleted, or aged out) keeps counting. Nothing removes from it.
+   */
   private readonly held = new Map<string, Held>();
   private loaded = false;
   /** Why the last read failed, or "". */
@@ -58,6 +62,7 @@ export class RemoteSessions {
     if (!this.loaded) await this.load();
     let changed = false;
     try {
+      // Only what is listed is fetched again; what is not listed is left as held, never pruned.
       const sessions = await this.cloud.sessions();
       for (const info of sessions) {
         const held = this.held.get(info.id);

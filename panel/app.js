@@ -344,9 +344,12 @@ async function status(poll) {
   try {
     const s = await (await fetch("api/status")).json();
     const remote =
-      s.remote.error !== "" ? ` · remote: ${s.remote.error}` : ` · ${s.remote.sessions} remote`;
+      s.remote.error !== ""
+        ? ` · remote: ${s.remote.error}`
+        : ` · ${s.remote.sessions.toLocaleString("en-US")} remote`;
+    const archived = ` · ${s.archived.toLocaleString("en-US")} archived`;
     node.textContent = s.ready
-      ? `${s.sessions} transcripts${remote}${s.scanning ? " · reading…" : ""}`
+      ? `${s.sessions.toLocaleString("en-US")} transcripts${archived}${remote}${s.scanning ? " · reading…" : ""}`
       : "Reading your transcripts for the first time…";
     if (poll && (!s.ready || s.scanning)) setTimeout(() => void status(true), 2000);
   } catch {
