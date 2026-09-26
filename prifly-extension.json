@@ -1,0 +1,17 @@
+{
+  "id": "token-stats",
+  "name": "Token statistics",
+  "description": "How many tokens your Claude Code sessions used, over time, split by account, model, repository, folder or local/remote. Opens from the status bar.",
+  "version": "0.1.0",
+  "main": "index.ts",
+  "panels": [
+    {
+      "id": "stats",
+      "label": "Token statistics",
+      "icon": "chart",
+      "description": "Tokens used over time, by account, model, repository, folder or local/remote",
+      "folder": "panel",
+      "page": "index.html"
+    }
+  ]
+}

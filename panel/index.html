@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Token statistics</title>
+    <link rel="stylesheet" href="style.css" />
+    <script>
+      // Before the first paint: the window says light or dark in the query.
+      if (new URLSearchParams(location.search).get("theme") === "dark") {
+        document.documentElement.classList.add("dark");
+      }
+    </script>
+  </head>
+  <body>
+    <div class="app">
+      <div class="bar">
+        <fieldset class="group" id="range" aria-label="Time range"></fieldset>
+        <label class="field">
+          <span>Bucket</span>
+          <select id="bucket"></select>
+        </label>
+        <fieldset class="group" id="split" aria-label="Split by"></fieldset>
+        <fieldset class="group" id="metric" aria-label="Measure"></fieldset>
+        <fieldset class="group" id="kind" aria-label="Chart"></fieldset>
+        <span class="grow"></span>
+        <span class="status" id="status" aria-live="polite"></span>
+        <button type="button" class="btn" id="refresh">Read again</button>
+      </div>
+      <div class="bar filters" id="filters"></div>
+      <section class="chart-box">
+        <div class="chart-head">
+          <div class="title" id="title"></div>
+          <div class="hint">Drag across the chart to zoom in · double-click or Backspace to go back · ←/→ to pan</div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <div class="chart" id="chart"></div>
+        <div class="overview" id="overview" title="The whole history: drag to choose a stretch"></div>
+      </section>
+      <div class="lower">
+        <section class="panel table-box">
+          <div class="panel-head" id="table-title">Breakdown</div>
+          <div class="table-scroll"><table id="table"></table></div>
+        </section>
+        <section class="panel heat-box">
+          <div class="panel-head" id="heat-title">By weekday and hour</div>
+          <div id="heat"></div>
+        </section>
+      </div>
+    </div>
+    <div class="tip" id="tip" hidden></div>
+    <div class="popover" id="picker" hidden></div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
