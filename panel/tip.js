@@ -4,7 +4,7 @@ import { esc, val } from "./format.js";
 
 const tip = () => document.getElementById("tip");
 
-/** rows: { label, value, colour }[], biggest first. */
+/** rows: { label, value, colour }[], in the order the caller wants them shown. */
 export function showTip(event, title, rows, total = true) {
   const node = tip();
   const sum = rows.reduce((s, r) => s + r.value, 0);

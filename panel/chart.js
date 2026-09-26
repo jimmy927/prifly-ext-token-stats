@@ -1,10 +1,12 @@
 // The main chart: stacked bars or lines over time, a crosshair tooltip, and
 // a drag that zooms into what it covers.
 
-import { bucketName, niceMax, timeTicks, val } from "./format.js";
+import { alphabetical, bucketName, niceMax, timeTicks, val } from "./format.js";
 import { hideTip, showTip } from "./tip.js";
 
 const NS = "http://www.w3.org/2000/svg";
+/** The series answer.ts makes of everything past the top lines ("3 more"). */
+const OTHER_KEY = "\u0000other";
 const M = { l: 56, r: 12, t: 8, b: 22 };
 
 export function el(tag, attrs, parent) {
@@ -104,10 +106,14 @@ function lines(svg, f, visible, y) {
 
 function tipAt(event, answer, visible, k) {
   const rows = visible.series
-    .map((s, j) => ({ label: s.label, value: s.values[k] ?? 0, colour: visible.colours[j] }))
-    .filter((r) => r.value > 0)
-    .sort((a, b) => b.value - a.value);
-  showTip(event, bucketName(answer.buckets[k], answer.bucket), rows);
+    .map((s, j) => ({
+      label: s.label,
+      value: s.values[k] ?? 0,
+      colour: visible.colours[j],
+      last: s.key === OTHER_KEY,
+    }))
+    .filter((r) => r.value > 0);
+  showTip(event, bucketName(answer.buckets[k], answer.bucket), alphabetical(rows));
 }
 
 /** Hover, drag-to-zoom and double-click-to-go-back, on one transparent layer. */

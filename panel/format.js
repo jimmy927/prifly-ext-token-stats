@@ -146,6 +146,19 @@ export function colours(series) {
   });
 }
 
+const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+/**
+ * Hover-card rows by label, ignoring case, numbers read as numbers:
+ * claude-opus-4-8, claude-opus-5, claude-opus-5-5. Rows marked `last` (the
+ * chart's "N more") stay at the end.
+ */
+export function alphabetical(rows) {
+  return [...rows].sort(
+    (a, b) => Number(a.last === true) - Number(b.last === true) || byName.compare(a.label, b.label),
+  );
+}
+
 export const esc = (s) =>
   String(s).replace(
     /[&<>"]/g,
