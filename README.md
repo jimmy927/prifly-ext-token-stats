@@ -6,16 +6,41 @@ window.
 
 - **Split by** account, model, repository, folder, local/remote or session, or
   show the total.
-- **Measure** output tokens, input + cache writes, cache reads, all tokens, or
-  API calls.
+- **Measure** cost (the default), output tokens, input + cache writes, cache
+  reads, all tokens, or API calls.
 - **Time**: ranges from 15 minutes to all history, and buckets from 1 second to
   1 week. Drag across the chart to zoom in. Double-click or Backspace goes
   back, and ←/→ pans. The strip under the chart shows all history; drag on it
   to pick a stretch.
 - **Filter** by any value of any dimension. Double-click a legend entry or a
   table row to show only that one; click a legend entry to hide it.
-- A table of the stretch on screen (output, input, cache reads, calls,
+- A table of the stretch on screen (cost, output, input, cache reads, calls,
   sessions, share) and a weekday-by-hour map.
+
+## Cost
+
+Tokens are not comparable across models: a Fable output token costs ten
+times a Haiku one. So the main measure is **cost**, what each call would have
+cost at Anthropic's API list prices, in US dollars. Each call is priced at its
+own model's rates for input, cache writes (the 5-minute and the 1-hour rate
+apart, as the API reports them in `usage.cache_creation`), cache reads and
+output. The prices are in `prices.ts`, taken from
+<https://platform.claude.com/docs/en/about-claude/pricing> and checked on
+2026-09-26; dated ids such as `claude-haiku-4-5-20251001` and `[1m]` suffixes
+count as their model.
+
+- **On a subscription this is value used, not money billed.** A Pro or Max
+  plan pays a flat fee; the cost here is what the same calls would have cost
+  on the API.
+- A model with no price in the table is **unpriced**: its calls are in no
+  cost, and the page names them under the title rather than counting them as
+  $0.
+- Calls read before the 5-minute/1-hour split was kept (the archive, and
+  cloud sessions read earlier) have all their cache writes priced at the
+  5-minute rate, so their cost is a lower bound.
+- Not priced: fast mode, US-only inference and the batch discount, none of
+  which Claude Code's transcripts show in use. The pricing page lists no
+  long-context rate for current models.
 
 ## Where the numbers come from
 

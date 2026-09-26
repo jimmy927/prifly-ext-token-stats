@@ -69,6 +69,7 @@ test("an answer splits, buckets and filters", () => {
       to: String(Date.parse("2026-09-02T02:00:00Z")),
       bucket: "3600000",
       split: "account",
+      metric: "output",
     },
     0,
   );

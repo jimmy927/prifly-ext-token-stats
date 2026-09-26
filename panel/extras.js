@@ -2,7 +2,7 @@
 // breakdown table and the weekday-by-hour map.
 
 import { el } from "./chart.js";
-import { esc, fmt, widthName } from "./format.js";
+import { esc, fmt, usd, widthName } from "./format.js";
 import { hideTip, showTip } from "./tip.js";
 
 /** The whole history as one filled line, the shown stretch lit, and a drag to pick another. */
@@ -72,11 +72,12 @@ export function drawOverview(host, answer, onPick) {
 }
 
 const COLUMNS = [
-  { key: "output", label: "Output" },
-  { key: "input", label: "Input + cache writes" },
-  { key: "cacheRead", label: "Cache reads" },
-  { key: "calls", label: "Calls" },
-  { key: "sessions", label: "Sessions" },
+  { key: "cost", label: "Cost", show: usd },
+  { key: "output", label: "Output", show: fmt },
+  { key: "input", label: "Input + cache writes", show: fmt },
+  { key: "cacheRead", label: "Cache reads", show: fmt },
+  { key: "calls", label: "Calls", show: fmt },
+  { key: "sessions", label: "Sessions", show: fmt },
 ];
 
 /** Every value of the split in the shown stretch, not only the charted ones. */
@@ -88,7 +89,7 @@ export function drawTable(host, rows, colourOf, sortKey, metricKey, onSort, onOn
     .map((r, i) => {
       const colour = colourOf(r.key);
       const share = (r[metricKey] / total) * 100;
-      return `<tr class="row" data-i="${i}"><td class="name" title="${esc(r.label)}"><i class="sw" style="background:${colour}"></i> ${esc(r.label)}</td>${COLUMNS.map((c) => `<td class="num">${fmt(r[c.key])}</td>`).join("")}<td><span class="share"><i style="width:${share.toFixed(1)}%;background:${colour}"></i></span> <span class="num">${share.toFixed(1)}%</span></td></tr>`;
+      return `<tr class="row" data-i="${i}"><td class="name" title="${esc(r.label)}"><i class="sw" style="background:${colour}"></i> ${esc(r.label)}</td>${COLUMNS.map((c) => `<td class="num">${c.show(r[c.key])}</td>`).join("")}<td><span class="share"><i style="width:${share.toFixed(1)}%;background:${colour}"></i></span> <span class="num">${share.toFixed(1)}%</span></td></tr>`;
     })
     .join("");
   host.innerHTML = `<thead>${head}</thead><tbody>${body}</tbody>`;

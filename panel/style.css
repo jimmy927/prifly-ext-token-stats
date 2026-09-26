@@ -194,6 +194,11 @@ input[type="search"] {
   font-size: 11px;
   color: var(--muted-fg);
 }
+.note {
+  flex: 1;
+  font-size: 11px;
+  color: var(--muted-fg);
+}
 .legend {
   display: flex;
   flex-wrap: wrap;

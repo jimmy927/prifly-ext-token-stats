@@ -3,7 +3,7 @@
 
 import { drawChart } from "./chart.js";
 import { drawHeat, drawOverview, drawTable } from "./extras.js";
-import { colours, esc, fmt, rangeName, widthName } from "./format.js";
+import { colours, esc, fmt, measureIsCost, rangeName, val, widthName } from "./format.js";
 import { openPicker } from "./picker.js";
 
 const SEC = 1000;
@@ -49,6 +49,7 @@ export const SPLITS = [
   ["none", "Total"],
 ];
 const METRICS = [
+  ["cost", "Cost"],
   ["output", "Output"],
   ["input", "Input + cache writes"],
   ["cacheRead", "Cache reads"],
@@ -56,6 +57,7 @@ const METRICS = [
   ["calls", "API calls"],
 ];
 const METRIC_ROW = {
+  cost: "cost",
   output: "output",
   input: "input",
   cacheRead: "cacheRead",
@@ -82,11 +84,12 @@ const state = {
   history: [],
   bucket: saved.bucket ?? 0,
   split: saved.split ?? "account",
-  metric: saved.metric ?? "output",
+  // Cost became the default measure in version 2: a choice saved before it starts on cost.
+  metric: saved.version === 2 ? (saved.metric ?? "cost") : "cost",
   kind: saved.kind ?? "bars",
   filters: saved.filters ?? {},
   hidden: new Set(),
-  sort: "output",
+  sort: "cost",
   answer: null,
   span: null,
 };
@@ -96,7 +99,7 @@ function save() {
   try {
     localStorage.setItem(
       "token-stats",
-      JSON.stringify({ range, bucket, split, metric, kind, filters }),
+      JSON.stringify({ version: 2, range, bucket, split, metric, kind, filters }),
     );
   } catch {
     // No storage in this frame: the choices last until it closes.
@@ -153,12 +156,14 @@ function visibleSeries() {
 function draw() {
   const answer = state.answer;
   if (answer === null) return;
+  measureIsCost(state.metric === "cost");
   const visible = visibleSeries();
   const metricName = METRICS.find(([k]) => k === state.metric)?.[1] ?? "";
   const splitName = SPLITS.find(([k]) => k === state.split)?.[1] ?? "";
   const total = answer.series.reduce((s, x) => s + x.total, 0);
   document.getElementById("title").textContent =
-    `${metricName} · ${fmt(total)} · ${rangeName(answer.from, answer.to)} · ${widthName(answer.bucket)} per bar`;
+    `${metricName} · ${val(total)} · ${rangeName(answer.from, answer.to)} · ${widthName(answer.bucket)} per bar`;
+  drawCostNote(answer.unpriced);
   drawLegend(visible);
   drawChart(document.getElementById("chart"), answer, visible, { onZoom: zoomTo, onBack: back });
   drawOverview(document.getElementById("overview"), answer, zoomTo);
@@ -192,8 +197,8 @@ function drawLegend(visible) {
     const button = document.createElement("button");
     button.type = "button";
     button.setAttribute("aria-pressed", String(!state.hidden.has(s.key)));
-    button.title = `${s.label}: ${fmt(s.total)}. Click to hide or show; double-click to show only this.`;
-    button.innerHTML = `<i class="sw" style="background:${visible.allColours[i]}"></i><span>${esc(s.label)} · ${fmt(s.total)}</span>`;
+    button.title = `${s.label}: ${val(s.total)}. Click to hide or show; double-click to show only this.`;
+    button.innerHTML = `<i class="sw" style="background:${visible.allColours[i]}"></i><span>${esc(s.label)} · ${val(s.total)}</span>`;
     button.addEventListener("click", () => {
       if (state.hidden.has(s.key)) state.hidden.delete(s.key);
       else state.hidden.add(s.key);
@@ -202,6 +207,22 @@ function drawLegend(visible) {
     button.addEventListener("dblclick", () => only(s.key));
     host.appendChild(button);
   });
+}
+
+/** Under the title, while the cost is shown: what the dollars mean and which calls have none. */
+function drawCostNote(unpriced) {
+  const node = document.getElementById("cost-note");
+  const parts = [];
+  if (state.metric === "cost") {
+    parts.push("At API list prices — on a subscription this is value used, not money billed.");
+  }
+  if (unpriced.calls > 0) {
+    parts.push(
+      `${fmt(unpriced.calls)} calls on unpriced models, in no cost: ${unpriced.models.join(", ")}`,
+    );
+  }
+  node.hidden = parts.length === 0;
+  node.textContent = parts.join(" · ");
 }
 
 /** Keep only this value of the split: a filter, shown as a chip. */

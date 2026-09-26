@@ -19,7 +19,14 @@ export type Usage = {
   model: string;
   cwd: string;
   input: number;
+  /** All cache writes, both lifetimes. */
   cacheWrite: number;
+  /**
+   * The part of `cacheWrite` written at the 1-hour rate, from the API's
+   * `usage.cache_creation.ephemeral_1h_input_tokens`. Absent on calls read
+   * before this was kept (the archive, cached cloud sessions): see `costOf`.
+   */
+  cacheWrite1h?: number;
   cacheRead: number;
   output: number;
 };
@@ -134,6 +141,7 @@ function callOf(
     cwd: state.cwd,
     input: num(usage["input_tokens"]),
     cacheWrite: num(usage["cache_creation_input_tokens"]),
+    cacheWrite1h: num(asRecord(usage["cache_creation"])?.["ephemeral_1h_input_tokens"]),
     cacheRead: num(usage["cache_read_input_tokens"]),
     output: num(usage["output_tokens"]),
   };

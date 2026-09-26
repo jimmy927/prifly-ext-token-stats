@@ -22,6 +22,8 @@ export type Row = {
   key: string;
   label: string;
   slot: number;
+  /** Dollars at API list prices, unpriced models' calls left out. */
+  cost: number;
   output: number;
   input: number;
   cacheRead: number;
@@ -40,6 +42,8 @@ export type Answer = {
   heat: number[][];
   facets: Record<Dimension, { key: string; label: string; total: number }[]>;
   span: { min: number; max: number };
+  /** Calls in the shown stretch on a model with no price: not in any cost. */
+  unpriced: { calls: number; models: string[] };
 };
 
 const OTHER_SLOT = -1;
@@ -94,7 +98,19 @@ export class Answerer {
       heat: this.heat(inRange, params.metric, tzMs),
       facets: this.facets(params.metric),
       span: this.span,
+      unpriced: this.unpriced(inRange),
     };
+  }
+
+  private unpriced(inRange: Int32Array): Answer["unpriced"] {
+    const models = new Set<number>();
+    let calls = 0;
+    for (const i of inRange) {
+      if (this.cols.priced[i] === 1) continue;
+      calls += 1;
+      models.add(this.cols.codes.model[i] ?? 0);
+    }
+    return { calls, models: [...models].map((code) => this.cols.names.model[code] ?? "?").sort() };
   }
 
   private codeOf(split: Dimension | "none", i: number): number {
@@ -185,6 +201,7 @@ export class Answerer {
           key: split === "none" ? "all" : (this.cols.names[split][code] ?? "?"),
           label: labelOf(this.cols, split, code),
           slot: this.slotOf(split, code),
+          cost: 0,
           output: 0,
           input: 0,
           cacheRead: 0,
@@ -194,6 +211,7 @@ export class Answerer {
         };
         rows.set(code, row);
       }
+      row.cost += this.cols.cost[i] ?? 0;
       row.output += this.cols.output[i] ?? 0;
       row.input += (this.cols.input[i] ?? 0) + (this.cols.cacheWrite[i] ?? 0);
       row.cacheRead += this.cols.cacheRead[i] ?? 0;
@@ -202,7 +220,7 @@ export class Answerer {
     }
     return [...rows.values()]
       .map(({ sessionSet, ...row }) => ({ ...row, sessions: sessionSet.size }))
-      .sort((a, b) => b.output - a.output);
+      .sort((a, b) => b.cost - a.cost || b.output - a.output);
   }
 
   /** Seven rows, Monday first, of 24 hours each. */
@@ -252,7 +270,7 @@ export function readParams(query: Record<string, string>, now: number): QueryPar
   };
   const to = num("to", now);
   const split = query["split"];
-  const metric = METRICS.find((m) => m === query["metric"]) ?? "output";
+  const metric = METRICS.find((m) => m === query["metric"]) ?? "cost";
   const filters: QueryParams["filters"] = {};
   try {
     const parsed: unknown = JSON.parse(query["filters"] ?? "{}");

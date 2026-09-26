@@ -1,7 +1,7 @@
 // The filter picker: every dimension's values, each with its all-time total,
 // ticked on to keep only those.
 
-import { esc, fmt } from "./format.js";
+import { esc, val } from "./format.js";
 
 const NAMES = {
   account: "Account",
@@ -70,7 +70,7 @@ function list(host, values, chosen, dim, query) {
   host.innerHTML = shown
     .map(
       (v, i) =>
-        `<label><input type="checkbox" data-i="${i}"${chosen[dim]?.has(v.key) ? " checked" : ""} /><span>${esc(v.label)}</span><span>${fmt(v.total)}</span></label>`,
+        `<label><input type="checkbox" data-i="${i}"${chosen[dim]?.has(v.key) ? " checked" : ""} /><span>${esc(v.label)}</span><span>${val(v.total)}</span></label>`,
     )
     .join("");
   for (const box of host.querySelectorAll("input")) {

@@ -24,8 +24,15 @@ export type FileOut = {
 
 const ARCHIVE_VERSION = 1;
 
-/** ts, account, model, cwd (the last three as indexes into `strings`), then the four counts. */
-type PackedUsage = [number, number, number, number, number, number, number, number];
+/**
+ * ts, account, model, cwd (the last three as indexes into `strings`), then the
+ * four counts, and last the 1-hour cache writes. Calls archived before that
+ * was kept have eight entries, not nine, and still read under version 1:
+ * their cache writes are priced at the 5-minute rate (see `costOf`).
+ */
+type PackedUsage =
+  | [number, number, number, number, number, number, number, number]
+  | [number, number, number, number, number, number, number, number, number];
 type PackedFile = [string, string, string | null, string, PackedUsage[]];
 type ArchiveJson = { version: number; strings: string[]; files: PackedFile[] };
 
@@ -46,8 +53,8 @@ export function encodeArchive(files: Iterable<FileOut>): ArchiveJson {
       file.sessionId,
       file.parentId,
       file.title,
-      file.usages.map(
-        (u): PackedUsage => [
+      file.usages.map((u): PackedUsage => {
+        const counts = [
           u.ts,
           code(u.account),
           code(u.model),
@@ -56,8 +63,9 @@ export function encodeArchive(files: Iterable<FileOut>): ArchiveJson {
           u.cacheWrite,
           u.cacheRead,
           u.output,
-        ],
-      ),
+        ] as const;
+        return u.cacheWrite1h === undefined ? [...counts] : [...counts, u.cacheWrite1h];
+      }),
     ],
   );
   return { version: ARCHIVE_VERSION, strings, files: packed };
@@ -86,16 +94,19 @@ function unpack(strings: string[], files: PackedFile[]): FileOut[] {
     sessionId,
     parentId,
     title,
-    usages: usages.map(([ts, account, model, cwd, input, cacheWrite, cacheRead, output]) => ({
-      ts,
-      account: str(account),
-      model: str(model),
-      cwd: str(cwd),
-      input,
-      cacheWrite,
-      cacheRead,
-      output,
-    })),
+    usages: usages.map(
+      ([ts, account, model, cwd, input, cacheWrite, cacheRead, output, cacheWrite1h]) => ({
+        ts,
+        account: str(account),
+        model: str(model),
+        cwd: str(cwd),
+        input,
+        cacheWrite,
+        ...(cacheWrite1h === undefined ? {} : { cacheWrite1h }),
+        cacheRead,
+        output,
+      }),
+    ),
   }));
 }
 

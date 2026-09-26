@@ -7,7 +7,7 @@
 
 import { type Columns, DIMENSIONS, type Dimension } from "./store";
 
-export const METRICS = ["output", "input", "cacheRead", "all", "calls"] as const;
+export const METRICS = ["cost", "output", "input", "cacheRead", "all", "calls"] as const;
 export type Metric = (typeof METRICS)[number];
 
 export type Filters = Partial<Record<Dimension, string[]>>;
@@ -61,6 +61,8 @@ export function floorTo(ts: number, width: number, tzMs: number): number {
 
 export function metricOf(cols: Columns, metric: Metric, i: number): number {
   switch (metric) {
+    case "cost":
+      return cols.cost[i] ?? 0;
     case "output":
       return cols.output[i] ?? 0;
     case "input":

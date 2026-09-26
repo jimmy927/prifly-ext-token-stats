@@ -16,6 +16,25 @@ export function fmt(n) {
   return String(Math.round(n));
 }
 
+/** $12.34, $1.2k, $3.4M. */
+export function usd(n) {
+  const abs = Math.abs(n);
+  if (abs >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+  if (abs >= 1e3) return `$${(n / 1e3).toFixed(abs >= 1e5 ? 0 : 1)}k`;
+  if (abs >= 100) return `$${Math.round(n)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+let dollars = false;
+
+/** Whether the measure shown is the cost: `val` then writes dollars. */
+export function measureIsCost(on) {
+  dollars = on;
+}
+
+/** A value of the measure shown: dollars for the cost, a count otherwise. */
+export const val = (n) => (dollars ? usd(n) : fmt(n));
+
 /** "5 min", "3 h", "1 day". */
 export function widthName(ms) {
   if (ms < MIN) return `${Math.round(ms / SEC)} s`;

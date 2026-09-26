@@ -46,7 +46,13 @@ function totalOutput(live: Map<string, FileOut>, archive: Map<string, FileOut>):
   }));
   const answer = new Answerer(buildColumns(batches)).answer(
     readParams(
-      { from: "0", to: String(Date.parse("2027-01-01")), split: "source", bucket: "86400000" },
+      {
+        from: "0",
+        to: String(Date.parse("2027-01-01")),
+        split: "source",
+        bucket: "86400000",
+        metric: "output",
+      },
       0,
     ),
   );

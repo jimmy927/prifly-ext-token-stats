@@ -36,7 +36,8 @@ export type ScanReply = {
   stats: { files: number; read: number; bytes: number; ms: number };
 };
 
-const CACHE_VERSION = 1;
+// 2: calls keep their 1-hour cache writes apart, for the cost; older caches are read again.
+const CACHE_VERSION = 2;
 const files = new Map<string, FileState>();
 const archive = new Map<string, FileOut>();
 let loaded = false;

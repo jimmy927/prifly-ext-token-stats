@@ -1,11 +1,12 @@
 /**
  * Every call, local and remote, as columns: a timestamp, a code per
- * dimension, and the four token counts. Rebuilt from the per-file results
+ * dimension, the four token counts and the cost. Rebuilt from the per-file results
  * whenever one of them changes — a few hundred thousand rows take
  * milliseconds — and queried by `query.ts`.
  */
 
 import type { Usage } from "./parse";
+import { costOf, type Price, priceOf } from "./prices";
 import { folderLabel, resolveRepos } from "./where";
 
 export const DIMENSIONS = ["account", "model", "repo", "folder", "source", "session"] as const;
@@ -31,6 +32,10 @@ export type Columns = {
   cacheWrite: Float64Array;
   cacheRead: Float64Array;
   output: Float64Array;
+  /** Each call's cost in dollars at API list prices; 0 on an unpriced model. */
+  cost: Float64Array;
+  /** 1 when the call's model has a price, 0 when it is unpriced. */
+  priced: Uint8Array;
   /** A session's words, by session id: its title. */
   titles: Map<string, string>;
 };
@@ -66,6 +71,13 @@ export function buildColumns(batches: Iterable<Batch>): Columns {
     cacheWrite: new Float64Array(length),
     cacheRead: new Float64Array(length),
     output: new Float64Array(length),
+    cost: new Float64Array(length),
+    priced: new Uint8Array(length),
+  };
+  const prices = new Map<string, Price | null>();
+  const priceFor = (model: string) => {
+    if (!prices.has(model)) prices.set(model, priceOf(model));
+    return prices.get(model) ?? null;
   };
   const titles = new Map<string, string>();
   const repos = resolveRepos(
@@ -81,6 +93,11 @@ export function buildColumns(batches: Iterable<Batch>): Columns {
       cols.cacheWrite[i] = usage.cacheWrite;
       cols.cacheRead[i] = usage.cacheRead;
       cols.output[i] = usage.output;
+      const price = priceFor(usage.model);
+      if (price !== null) {
+        cols.cost[i] = costOf(price, usage);
+        cols.priced[i] = 1;
+      }
       codes.account[i] = interners.account.code(usage.account);
       codes.model[i] = interners.model.code(usage.model);
       codes.repo[i] = interners.repo.code(batch.repo ?? repos.get(usage.cwd) ?? "unknown");

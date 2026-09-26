@@ -1,7 +1,7 @@
 // The main chart: stacked bars or lines over time, a crosshair tooltip, and
 // a drag that zooms into what it covers.
 
-import { bucketName, fmt, niceMax, timeTicks } from "./format.js";
+import { bucketName, niceMax, timeTicks, val } from "./format.js";
 import { hideTip, showTip } from "./tip.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -46,7 +46,7 @@ function axes(svg, f) {
   for (let k = 0; k <= 4; k++) {
     const v = (f.top * k) / 4;
     el("line", { x1: M.l, x2: f.width - M.r, y1: y(v), y2: y(v), class: "grid" }, svg);
-    el("text", { x: M.l - 6, y: y(v) + 4, "text-anchor": "end" }, svg).textContent = fmt(v);
+    el("text", { x: M.l - 6, y: y(v) + 4, "text-anchor": "end" }, svg).textContent = val(v);
   }
   for (const tick of timeTicks(f.x0, f.x1, f.plotW)) {
     const px = f.x(tick.t);
