@@ -68,23 +68,39 @@ function nameOf(top: string): string {
   return basename(top);
 }
 
-const cache = new Map<string, string>();
-
-/** The repository a local folder belongs to, by name. */
-export function repoOf(cwd: string): string {
-  if (cwd === "") return "unknown";
-  const known = cache.get(cwd);
-  if (known !== undefined) return known;
-  let repo: string;
+/** A folder that still exists, by its git origin; null for one that is gone or unreadable. */
+function liveRepo(cwd: string): string | null {
   try {
-    const top = existsSync(cwd) ? gitTop(cwd) : null;
-    repo = top === null ? guessRepo(cwd) : nameOf(top);
+    if (!existsSync(cwd)) return null;
+    const top = gitTop(cwd);
+    return top === null ? guessRepo(cwd) : nameOf(top);
   } catch {
-    // Unreadable on the way up (permissions, a racing delete): the path decides.
-    repo = guessRepo(cwd);
+    // Unreadable on the way up (permissions, a racing delete): as good as gone.
+    return null;
   }
-  cache.set(cwd, repo);
-  return repo;
+}
+
+/**
+ * The repository of each folder, by name. Folders that still exist are asked
+ * git first; a deleted clone is then known by its name, with a trailing number
+ * dropped when that names a repository found live — `~/odi3`, long gone, was a
+ * clone of `odi` as surely as `~/odi5`, which is still there, is.
+ */
+export function resolveRepos(cwds: Iterable<string>): Map<string, string> {
+  const out = new Map<string, string>();
+  const gone: string[] = [];
+  for (const cwd of new Set(cwds)) {
+    const live = cwd === "" ? "unknown" : liveRepo(cwd);
+    if (live === null) gone.push(cwd);
+    else out.set(cwd, live);
+  }
+  const known = new Set(out.values());
+  for (const cwd of gone) {
+    const guess = guessRepo(cwd);
+    const stripped = guess.replace(/[-_]?\d+$/, "");
+    out.set(cwd, stripped !== guess && known.has(stripped) ? stripped : guess);
+  }
+  return out;
 }
 
 /** A repository URL, `https://github.com/o/r(.git)` or `git@github.com:o/r.git`, as `r`. */

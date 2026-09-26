@@ -6,7 +6,7 @@
  */
 
 import type { Usage } from "./parse";
-import { folderLabel, repoOf } from "./where";
+import { folderLabel, resolveRepos } from "./where";
 
 export const DIMENSIONS = ["account", "model", "repo", "folder", "source", "session"] as const;
 export type Dimension = (typeof DIMENSIONS)[number];
@@ -68,6 +68,9 @@ export function buildColumns(batches: Iterable<Batch>): Columns {
     output: new Float64Array(length),
   };
   const titles = new Map<string, string>();
+  const repos = resolveRepos(
+    all.flatMap((batch) => (batch.repo === null ? batch.usages.map((u) => u.cwd) : [])),
+  );
   let i = 0;
   for (const batch of all) {
     const session = sessionOf(batch.sessionId);
@@ -80,7 +83,7 @@ export function buildColumns(batches: Iterable<Batch>): Columns {
       cols.output[i] = usage.output;
       codes.account[i] = interners.account.code(usage.account);
       codes.model[i] = interners.model.code(usage.model);
-      codes.repo[i] = interners.repo.code(batch.repo ?? repoOf(usage.cwd));
+      codes.repo[i] = interners.repo.code(batch.repo ?? repos.get(usage.cwd) ?? "unknown");
       codes.folder[i] = interners.folder.code(
         batch.source === "remote" ? `cloud: ${usage.cwd || "?"}` : folderLabel(usage.cwd),
       );
