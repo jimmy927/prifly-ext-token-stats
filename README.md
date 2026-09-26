@@ -17,6 +17,23 @@ window.
 - A table of the stretch on screen (cost, output, input, cache reads, calls,
   sessions, share) and a weekday-by-hour map.
 
+## Model colours
+
+Split by model, each family has one hue and each version a shade of it:
+Opus blue, Fable amber, Sonnet pink and Haiku green. The newest version wears
+the full colour and older ones step darker on the light theme, paler on the
+dark. Other splits use the ordinary categorical palette, as does a family the
+page does not know.
+
+**These are prifly's own colours, not Anthropic's colours for its models.**
+Anthropic assigns its models no colours anywhere public, so prifly borrowed
+colours Anthropic uses for other things: the brand blue `#6a9bcc` for Opus,
+and Claude Code's amber `#ca8a04`, pink `#c46686` and green `#16a34a` for
+Fable, Sonnet and Haiku. On the light theme the blue and the amber are
+darkened slightly to keep 3:1 against white. prifly's own UI uses the same
+palette. The values are in `panel/style.css` and the shade rule is in
+`tones.ts`.
+
 ## Cost
 
 Tokens are not comparable across models: a Fable output token costs ten

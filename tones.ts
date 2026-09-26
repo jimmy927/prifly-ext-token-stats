@@ -6,6 +6,10 @@
  * every shade keeps 3:1 against it. The colours are `--m-<family>-<shade>` in
  * `panel/style.css`, where their sources are.
  *
+ * The palette is prifly's own choice, also used in prifly's own UI. Anthropic
+ * assigns its models no colours; these are colours Anthropic uses for other
+ * things (its brand blue, Claude Code's amber, pink and green).
+ *
  * A version's shade is its rank among the family's versions in all the data,
  * never among the filtered calls: the same model keeps its shade whatever is
  * shown. A family this does not know, or a version older than the last shade,

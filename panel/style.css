@@ -21,10 +21,11 @@
   --s6: #4a3aa7;
   --s7: #e34948;
   --other: #b4b8bf;
-  /* Model families, newest version first (tones.ts). Anthropic gives its
-     models no colours of their own (Claude Code 2.1.283's themes,
-     anthropic.com/claude/*, checked 2026-09-27), so each family takes one of
-     Anthropic's colours: Opus the brand blue #6a9bcc (anthropics/skills
+  /* Model families, newest version first (tones.ts). prifly's own palette,
+     shared with prifly's own UI, and not colours Anthropic assigns to its
+     models: it assigns none (Claude Code 2.1.283's themes,
+     anthropic.com/claude/*, checked 2026-09-27). Each family borrows a
+     colour Anthropic uses for something else: Opus the brand blue #6a9bcc (anthropics/skills
      brand-guidelines; Claude Code's `professionalBlue`), Fable, Sonnet and
      Haiku Claude Code's amber #ca8a04, pink #c46686 and green #16a34a
      (`yellow_`, `pink_`, `green_FOR_SUBAGENTS_ONLY`). Older versions step
