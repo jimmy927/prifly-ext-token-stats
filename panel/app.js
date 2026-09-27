@@ -14,6 +14,7 @@ import {
   widthName,
 } from "./format.js";
 import { openPicker } from "./picker.js";
+import { drawSimulator } from "./simulator.js";
 
 const SEC = 1000;
 const MIN = 60 * SEC;
@@ -199,6 +200,11 @@ function draw() {
   document.getElementById("heat-title").textContent =
     `${metricName} by weekday and hour, in this stretch`;
   drawHeat(document.getElementById("heat"), answer.heat);
+  drawSimulator(
+    document.getElementById("sim"),
+    answer.simulation,
+    Object.values(state.filters).some((values) => values.length > 0),
+  );
   drawFilters();
 }
 

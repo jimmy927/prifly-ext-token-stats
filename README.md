@@ -59,6 +59,34 @@ count as their model.
   which Claude Code's transcripts show in use. The pricing page lists no
   long-context rate for current models.
 
+## Context window simulator
+
+Most of the cost is cache reads: every call sends the whole conversation
+again, and a conversation can grow towards a 1M-token window. The
+**Context window simulator** panel shows what a smaller window would have
+cost. It reads "This is your cost today: $X", then one row per window —
+800k, 600k, 400k and 200k tokens — with its cost, the saving in dollars and
+per cent, and a bar. Beside it, the same for the stretch on screen. It
+follows the filters, so it can answer for one account, model or session.
+Today is your own day, from local midnight.
+
+How a call is repriced (`simulate.ts`):
+
+- A call's context is everything it sent: input + cache writes + cache
+  reads.
+- A call whose context fits the window is unchanged.
+- A call over the window is cut to the window, as if the conversation had
+  been compacted just before it. The excess comes off the cache reads first,
+  then off the cache writes (their 5-minute part first), then off the input.
+  Output is unchanged.
+- The cut counts are priced with the same table as every other cost here.
+  Unpriced models are in no figure.
+
+**This is an estimate, and the most a smaller window could save.** It leaves
+out the cost of the compaction calls themselves, the extra turns a smaller
+window may need to redo work it forgot, and any change in the quality of the
+answers. Hovering a row shows how many calls that window would have cut.
+
 ## Where the numbers come from
 
 Every assistant line in a Claude Code transcript carries the API's `usage`

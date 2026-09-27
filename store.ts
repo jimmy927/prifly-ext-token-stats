@@ -30,12 +30,16 @@ export type Columns = {
   names: Record<Dimension, string[]>;
   input: Float64Array;
   cacheWrite: Float64Array;
+  /** The part of `cacheWrite` at the 1-hour rate; 0 where it was not kept. */
+  cacheWrite1h: Float64Array;
   cacheRead: Float64Array;
   output: Float64Array;
   /** Each call's cost in dollars at API list prices; 0 on an unpriced model. */
   cost: Float64Array;
   /** 1 when the call's model has a price, 0 when it is unpriced. */
   priced: Uint8Array;
+  /** Each model code's price, null for an unpriced model: the simulator reprices calls with it. */
+  prices: (Price | null)[];
   /** A session's words, by session id: its title. */
   titles: Map<string, string>;
 };
@@ -69,6 +73,7 @@ export function buildColumns(batches: Iterable<Batch>): Columns {
     ts: new Float64Array(length),
     input: new Float64Array(length),
     cacheWrite: new Float64Array(length),
+    cacheWrite1h: new Float64Array(length),
     cacheRead: new Float64Array(length),
     output: new Float64Array(length),
     cost: new Float64Array(length),
@@ -91,6 +96,7 @@ export function buildColumns(batches: Iterable<Batch>): Columns {
       cols.ts[i] = usage.ts;
       cols.input[i] = usage.input;
       cols.cacheWrite[i] = usage.cacheWrite;
+      cols.cacheWrite1h[i] = usage.cacheWrite1h ?? 0;
       cols.cacheRead[i] = usage.cacheRead;
       cols.output[i] = usage.output;
       const price = priceFor(usage.model);
@@ -113,5 +119,6 @@ export function buildColumns(batches: Iterable<Batch>): Columns {
     Dimension,
     string[]
   >;
-  return { length, codes, names, titles, ...cols };
+  const modelPrices = names.model.map(priceFor);
+  return { length, codes, names, titles, prices: modelPrices, ...cols };
 }

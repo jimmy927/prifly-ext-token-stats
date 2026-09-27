@@ -1,0 +1,88 @@
+/* The context window simulator's panel (simulator.js), and the third column
+   of the lower row it takes. Loaded after style.css, so these win. */
+.lower {
+  /* The simulator's six rows and its caveat, whole. */
+  min-height: 320px;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 4fr) minmax(0, 3fr);
+}
+/* Too narrow for three columns: the heat map gets a row of its own and the page scrolls. */
+@media (max-width: 1400px) {
+  body {
+    overflow: auto;
+  }
+  .app {
+    height: auto;
+    min-height: 100%;
+  }
+  .chart-box {
+    height: 520px;
+    flex: none;
+  }
+  .lower {
+    flex: none;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+  .table-box {
+    max-height: 420px;
+  }
+  .heat-box {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 900px) {
+  .lower {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.sim {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  flex: 1;
+}
+.sim-today {
+  font-size: 14px;
+}
+.sim-today b {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.sim-sub,
+.sim-pct,
+.sim-none {
+  color: var(--muted-fg);
+}
+.sim-sub {
+  font-size: 11px;
+}
+.sim-table th {
+  cursor: default;
+}
+.sim-table th,
+.sim-table td {
+  padding: 3px 5px;
+}
+.sim-table .sim-gap {
+  padding-left: 14px;
+}
+.sim-table tbody tr:first-child td {
+  font-weight: 600;
+}
+.sim-bar {
+  display: inline-block;
+  width: 48px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--muted);
+  overflow: hidden;
+  vertical-align: middle;
+}
+.sim-bar i {
+  display: block;
+  height: 100%;
+  background: var(--s0);
+}
+.sim .note {
+  flex: none;
+}

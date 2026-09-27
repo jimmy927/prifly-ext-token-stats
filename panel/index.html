@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Token statistics</title>
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="simulator.css" />
     <script>
       // Before the first paint: the window says light or dark in the query.
       if (new URLSearchParams(location.search).get("theme") === "dark") {
@@ -42,6 +43,10 @@
         <section class="panel table-box">
           <div class="panel-head" id="table-title">Breakdown</div>
           <div class="table-scroll"><table id="table"></table></div>
+        </section>
+        <section class="panel sim-box">
+          <div class="panel-head">Context window simulator</div>
+          <div class="sim" id="sim"></div>
         </section>
         <section class="panel heat-box">
           <div class="panel-head" id="heat-title">By weekday and hour</div>

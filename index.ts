@@ -143,9 +143,11 @@ export async function panel(_panelId: string, request: PanelRequest): Promise<un
     case "refresh":
       await Promise.all([scanLocal(state), scanRemote(state)]);
       return status(state);
-    case "stats":
+    case "stats": {
       if (state.lastScan === null) await scanLocal(state);
-      return answerer(state).answer(readParams(request.query, Date.now()));
+      const now = Date.now();
+      return answerer(state).answer(readParams(request.query, now), now);
+    }
     default:
       throw new Error(`No such request: ${request.path}`);
   }

@@ -15,8 +15,11 @@ import {
   metricOf,
   type QueryParams,
 } from "./query";
+import { type Simulation, simulateRows } from "./simulate";
 import { type Columns, DIMENSIONS, type Dimension } from "./store";
 import { modelTones } from "./tones";
+
+const DAY = 86_400_000;
 
 /** `tone` is a model's family shade (`opus-0`), which the page prefers to the slot; see `tones.ts`. */
 export type Series = {
@@ -54,6 +57,8 @@ export type Answer = {
   span: { min: number; max: number };
   /** Calls in the shown stretch on a model with no price: not in any cost. */
   unpriced: { calls: number; models: string[] };
+  /** The filtered calls' cost under smaller context windows: today (the reader's day) and the stretch. */
+  simulation: { today: Simulation; stretch: Simulation };
 };
 
 const OTHER_SLOT = -1;
@@ -80,7 +85,7 @@ export class Answerer {
       cols.length === 0 ? { min: Date.now() - 86_400_000, max: Date.now() } : { min, max };
   }
 
-  answer(params: QueryParams): Answer {
+  answer(params: QueryParams, now = Date.now()): Answer {
     const rows = filtered(this.cols, params.filters);
     const tzMs = params.tz * 60_000;
     // Nothing before the first call: "all time" starts there, not in 1970.
@@ -111,6 +116,11 @@ export class Answerer {
       facets: this.facets(params.metric),
       span: this.span,
       unpriced: this.unpriced(inRange),
+      simulation: {
+        today: simulateRows(this.cols, rows, floorTo(now, DAY, tzMs), now + 1),
+        // From the first bucket's start, as the chart and the table count it.
+        stretch: simulateRows(this.cols, inRange, start, to),
+      },
     };
   }
 
