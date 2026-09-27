@@ -4,7 +4,8 @@
 
 import { esc, fmt, usd } from "./format.js";
 
-const count = (n) => n.toLocaleString("en-US");
+// Rounded: a call split across repositories counts in parts.
+const count = (n) => Math.round(n).toLocaleString("en-US");
 
 /** "−$2.10 · 5.1%", or a dash when nothing would be saved. */
 function saving(actual, cost) {

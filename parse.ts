@@ -43,6 +43,8 @@ export type ReaderState = {
   segments: Segment[];
   /** The last few call ids, enough to drop a call's repeated content-block lines. */
   recent: string[];
+  /** Files the transcript wrote since the scan last took them: see `writesOf`. */
+  written: string[];
 };
 
 export const UNKNOWN = "not recorded";
@@ -51,7 +53,31 @@ const EMAIL = /The user's email address is ([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a
 const RECENT = 64;
 
 export function freshState(account = ""): ReaderState {
-  return { account, cwd: "", title: "", prompt: "", segments: [], recent: [] };
+  return { account, cwd: "", title: "", prompt: "", segments: [], recent: [], written: [] };
+}
+
+/** The tools that write a file, and the input field that names it. */
+const WRITE_TOOLS: Record<string, string> = {
+  Edit: "file_path",
+  MultiEdit: "file_path",
+  Write: "file_path",
+  NotebookEdit: "notebook_path",
+};
+
+/**
+ * The files an assistant line's tool calls write, one entry per call. What a
+ * Bash command writes is not guessed at: only these tools name their file.
+ */
+export function writesOf(line: Line): string[] {
+  const content = asRecord(line["message"])?.["content"];
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((raw) => {
+    const block = asRecord(raw);
+    const field = WRITE_TOOLS[str(block?.["name"])];
+    if (block?.["type"] !== "tool_use" || field === undefined) return [];
+    const path = str(asRecord(block["input"])?.[field]);
+    return path.startsWith("/") ? [path] : [];
+  });
 }
 
 type Line = Record<string, unknown>;
@@ -115,6 +141,8 @@ export function readLine(
     state.segments.push({ ts: Number.isNaN(ts) ? 0 : ts, account });
   }
   if (line["type"] !== "assistant" || Number.isNaN(ts)) return null;
+  // Each content block has a line of its own: a tool call is on one the call's id skips.
+  state.written.push(...writesOf(line));
   return callOf(state, line, ts, fixed);
 }
 

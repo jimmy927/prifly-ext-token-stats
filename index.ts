@@ -44,6 +44,7 @@ function localBatches(state: Running): Batch[] {
     source: "local",
     repo: null,
     usages: file.usages,
+    ...(file.writes === undefined ? {} : { writes: file.writes }),
   }));
 }
 

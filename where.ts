@@ -6,6 +6,10 @@
  * (`~/src/prifly.worktrees/token-stats`) counts as prifly, found from its
  * `.git` file where it still exists and from the `.worktrees/` naming where
  * it has been removed since.
+ *
+ * A folder in no repository at all (`~/src`, the home folder, a scratchpad)
+ * is `NO_REPO`, never the folder's name: `store.ts` then places its calls by
+ * the files the session wrote (`repoOfPath`).
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -13,6 +17,9 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
 const HOME = homedir();
+
+/** The repository of a folder that is in none. */
+export const NO_REPO = "(no repository)";
 
 /** `/home/jimmy/src/odi` as `~/src/odi`. */
 export function folderLabel(cwd: string): string {
@@ -41,14 +48,21 @@ function gitTop(cwd: string): string | null {
   return null;
 }
 
-/** From the path alone, for a folder that is gone: `x.worktrees/y` is x, a scratchpad is a scratchpad. */
+/** The main checkout a worktree's path names: `x.worktrees/y` and `x/.claude/worktrees/y` are x. */
+function worktreeMain(path: string): string | null {
+  return (
+    /^(.*?)\.worktrees\//.exec(path)?.[1] ??
+    /^(.*?)\/(\.claude\/worktrees|worktrees)\//.exec(path)?.[1] ??
+    null
+  );
+}
+
+/** From the path alone, for a folder that is gone: `x.worktrees/y` is x, a scratchpad is in none. */
 function guessRepo(cwd: string): string {
-  if (/\/scratchpad(\/|$)/.test(cwd) || cwd.startsWith("/tmp/")) return "scratchpads";
-  const worktree = /^(.*?)\.worktrees\//.exec(cwd)?.[1];
-  if (worktree !== undefined) return basename(worktree);
-  const nested = /^(.*?)\/(\.claude\/worktrees|worktrees)\//.exec(cwd)?.[1];
-  if (nested !== undefined) return basename(nested);
-  return cwd === HOME ? "~" : basename(cwd) || "unknown";
+  if (/\/scratchpad(\/|$)/.test(cwd) || cwd.startsWith("/tmp/")) return NO_REPO;
+  const main = worktreeMain(cwd);
+  if (main !== null) return basename(main);
+  return cwd === HOME ? NO_REPO : basename(cwd) || "unknown";
 }
 
 /**
@@ -73,7 +87,9 @@ function liveRepo(cwd: string): string | null {
   try {
     if (!existsSync(cwd)) return null;
     const top = gitTop(cwd);
-    return top === null ? guessRepo(cwd) : nameOf(top);
+    if (top !== null) return nameOf(top);
+    // What is left of a removed worktree (`x.worktrees/y` without its `.git`) is still x's.
+    return repoOfPath(cwd) ?? NO_REPO;
   } catch {
     // Unreadable on the way up (permissions, a racing delete): as good as gone.
     return null;
@@ -101,6 +117,30 @@ export function resolveRepos(cwds: Iterable<string>): Map<string, string> {
     out.set(cwd, stripped !== guess && known.has(stripped) ? stripped : guess);
   }
   return out;
+}
+
+/**
+ * The repository a written file is in; null for one in none, such as a
+ * scratch file. A file that is gone since is placed by the nearest folder
+ * above it that is still there, when that is in a checkout (a deleted file
+ * of `~/src/odi`, or of a removed `~/src/odi/.claude/worktrees/x`, is odi),
+ * and otherwise by its path's naming: in a removed `~/src/odi.worktrees/x`
+ * it is odi, by `~/src/odi`'s origin while that is there.
+ */
+export function repoOfPath(path: string): string | null {
+  try {
+    let there = path;
+    while (there !== dirname(there) && !existsSync(there)) there = dirname(there);
+    const top = gitTop(there);
+    if (top !== null) return nameOf(top);
+    const main = worktreeMain(path);
+    if (main === null) return null;
+    const mainTop = existsSync(main) ? gitTop(main) : null;
+    return mainTop === null ? basename(main) : nameOf(mainTop);
+  } catch {
+    // Unreadable on the way up (permissions, a racing delete): nothing to go by.
+    return null;
+  }
 }
 
 /** A repository URL, `https://github.com/o/r(.git)` or `git@github.com:o/r.git`, as `r`. */

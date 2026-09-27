@@ -119,6 +119,16 @@ counted once, by its message id.
 - **Repository** is the checkout's origin, so worktrees and extra clones of
   one repository count as that repository. **Folder** is the session's
   working directory.
+- A session started **outside any repository** (`~/src`, `~`, a scratchpad)
+  counts towards the repositories it wrote into. Each transcript, the
+  session's and each sub-agent's apart, splits its calls in proportion to
+  the files its Edit, Write, MultiEdit and NotebookEdit calls wrote into
+  each repository; what Bash wrote is not guessed at, and scratch files in no
+  repository do not count. A file is placed when it is read, and a removed
+  worktree keeps its place (`x.worktrees/y` is x). A transcript that wrote
+  into no repository shows as **(no repository)**. The parts of a split call
+  add up to it, so every total is unchanged; the Folder split still shows
+  the session's own folder.
 
 ## Install
 
