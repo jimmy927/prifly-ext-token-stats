@@ -48,8 +48,10 @@ function axes(svg, f, now) {
   for (const t of midnights(f.from, f.to)) {
     const px = f.x(t);
     el("line", { x1: px, x2: px, y1: M.t, y2: M.t + f.plotH, class: "grid" }, svg);
-    el("text", { x: px + 4, y: f.height - 6, "text-anchor": "start" }, svg).textContent =
-      dayName(t);
+    const label = el("text", { x: px + 4, y: f.height - 6, "text-anchor": "start" }, svg);
+    label.textContent = dayName(t);
+    // The last midnight's day runs past the edge: its label goes rather than being cut.
+    if (px + 4 + label.getComputedTextLength() > f.width) label.remove();
   }
   const base = M.t + f.plotH;
   el("line", { x1: M.l, x2: f.width - M.r, y1: base, y2: base, class: "axis" }, svg);
@@ -65,6 +67,16 @@ function line(svg, f, points, colour, dashed) {
   el("path", attrs, svg);
 }
 
+/** A dot at each reading when they span too few pixels for a line: minutes on a nine-day axis. */
+function dots(svg, f, points, colour) {
+  const first = points[0];
+  const last = points.at(-1);
+  if (first === undefined || f.x(last[0]) - f.x(first[0]) >= 12) return;
+  for (const [t, v] of points) {
+    el("circle", { cx: f.x(t), cy: f.y(v), r: 3, fill: colour, stroke: "var(--card)" }, svg);
+  }
+}
+
 function limit(svg, f, value, words) {
   el("line", { x1: M.l, x2: f.width - M.r, y1: f.y(value), y2: f.y(value), class: "limit" }, svg);
   const label = { x: f.width - M.r - 4, y: f.y(value) - 5, "text-anchor": "end" };
@@ -73,23 +85,10 @@ function limit(svg, f, value, words) {
 
 /** The pool's line, measured up to now and forecast after, and its hover rows at hour `k`. */
 function drawPool(svg, f, answer, colours) {
-  const { from, step, pool } = answer.grid;
-  const points = pool.map((v, k) => [from + k * step, v]).filter(([, v]) => v !== null);
   limit(svg, f, 0, "pool empty");
-  line(
-    svg,
-    f,
-    points.filter(([t]) => t <= answer.now),
-    "var(--fg)",
-    false,
-  );
-  line(
-    svg,
-    f,
-    points.filter(([t]) => t >= answer.now - step),
-    "var(--fg)",
-    true,
-  );
+  line(svg, f, answer.pool.forecast, "var(--fg)", true);
+  line(svg, f, answer.pool.measured, "var(--fg)", false);
+  dots(svg, f, answer.pool.measured, "var(--fg)");
   return (k) => {
     const rows = answer.accounts
       .map((a, i) => ({ label: a.label, value: a.hourly[k], colour: colours[i] }))
@@ -103,8 +102,9 @@ function drawAccounts(svg, f, answer, colours) {
   limit(svg, f, 100, "limit");
   answer.accounts.forEach((a, i) => {
     if (view.hidden.has(a.email)) return;
-    line(svg, f, a.measured, colours[i], false);
     line(svg, f, a.forecast, colours[i], true);
+    line(svg, f, a.measured, colours[i], false);
+    dots(svg, f, a.measured, colours[i]);
   });
   return (k) => ({
     rows: answer.accounts
@@ -125,7 +125,20 @@ function nowLine(svg, f, now) {
   el("text", { ...at, x: f.x(now) - 4, "text-anchor": "end", class: "halo" }, svg).textContent =
     "measured";
   el("text", { ...at, x: f.x(now) + 124, "text-anchor": "start", class: "halo" }, svg).textContent =
-    "forecast at the 24 h burn";
+    "forecast at each account's burn";
+}
+
+/** What the chart under it draws, in the mode on screen, and how far back the readings go. */
+export function burndownNote(mode, answer) {
+  const since =
+    answer.firstAt > answer.grid.from
+      ? ` Readings began ${dayName(answer.firstAt)} ${clockName(answer.firstAt)} CET: the measured part starts there, a dot a reading while they span only minutes.`
+      : "";
+  const lines =
+    mode === "pool"
+      ? `What all ${answer.accounts.length} accounts have left together: the sum of 100 − each one's weekly %, so at most ${answer.accounts.length * 100}%. At an account's reset its share refills to 100 and it burns again at its rate; an account with no rate is held where it is.`
+      : "Each line climbs at that account's burn, stops at the 100% limit and drops to 0 at its weekly reset. An account with no rate has no forecast line.";
+  return `${lines}${since}`;
 }
 
 /** Crosshair and the shared hover card, hour by hour. */

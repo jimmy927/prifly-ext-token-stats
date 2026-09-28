@@ -59,17 +59,17 @@
         <div class="empty" id="fc-empty" hidden></div>
         <div class="fc-body" id="fc-body" hidden>
           <section class="panel">
-            <div class="panel-head fc-head">Runway per account <span class="sub">Weekly limit, at each account's last 24 h burn</span></div>
+            <div class="panel-head fc-head">Runway per account <span class="sub">Weekly limit, at each account's burn</span></div>
             <div class="fc-banner" id="fc-banner" hidden></div>
             <div class="table-scroll"><table class="fc-table" id="fc-runway"></table></div>
-            <div class="note">Solid fill = spent now · hatched = projected by the reset at the last 24 h burn · line = how much of the week has passed. Times in CET.</div>
+            <div class="note">Solid fill = spent now · hatched = projected by the reset at its burn · line = how much of the week has passed. Burn = the rise over the last 24 h of readings; with under an hour of readings, the latest % over the hours since the week began (for a spent account a floor, marked ≥). Times in CET.</div>
           </section>
           <div class="fc-row">
             <section class="panel">
               <div class="panel-head fc-head">Burn-down forecast <span class="sub">Weekly %, 3 days measured, 6 days ahead</span><span class="grow"></span><fieldset class="group" id="fc-mode" aria-label="Show"></fieldset></div>
               <div class="fc-legend" id="fc-burn-legend"></div>
               <div class="fc-chart" id="fc-burn"></div>
-              <div class="note">Each line drops to 0 at that account's weekly reset and climbs again at its 24 h burn. An account with too few readings for a rate has no forecast line; the pool counts it as holding where it is until its reset.</div>
+              <div class="note" id="fc-burn-note"></div>
             </section>
             <section class="panel">
               <div class="panel-head fc-head">Accounts needed <span class="sub">Pool burn against what the accounts refill</span><span class="grow"></span><fieldset class="group" id="fc-days" aria-label="Average over"></fieldset></div>
