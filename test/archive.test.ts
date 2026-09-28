@@ -62,7 +62,10 @@ function totalOutput(live: Map<string, FileOut>, archive: Map<string, FileOut>):
 const none = { files: [], removed: [], archived: [], reclaimed: [] };
 
 test("the archive keeps every field through its compact form", () => {
-  const files = [file("/p/a.jsonl", 5), { ...file("/p/s/subagents/b.jsonl", 7), parentId: "s" }];
+  const files = [
+    file("/p/a.jsonl", 5),
+    { ...file("/p/s/subagents/b.jsonl", 7), parentId: "s", writes: { odi: 3, prifly: 1 } },
+  ];
   const json = JSON.parse(JSON.stringify(encodeArchive(files)));
   expect(json.strings).toEqual(["a@x.com", "claude-opus-5-5", "/tmp/x"]);
   expect(decodeArchive(json)).toEqual(files);

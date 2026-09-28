@@ -6,6 +6,7 @@
     <title>Token statistics</title>
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="simulator.css" />
+    <link rel="stylesheet" href="forecast.css" />
     <script>
       // Before the first paint: the window says light or dark in the query.
       if (new URLSearchParams(location.search).get("theme") === "dark") {
@@ -16,20 +17,21 @@
   <body>
     <div class="app">
       <div class="bar">
-        <fieldset class="group" id="range" aria-label="Time range"></fieldset>
-        <label class="field">
+        <fieldset class="group" id="view" aria-label="View"></fieldset>
+        <fieldset class="group usage-only" id="range" aria-label="Time range"></fieldset>
+        <label class="field usage-only">
           <span>Bucket</span>
           <select id="bucket"></select>
         </label>
-        <fieldset class="group" id="split" aria-label="Split by"></fieldset>
-        <fieldset class="group" id="metric" aria-label="Measure"></fieldset>
-        <fieldset class="group" id="kind" aria-label="Chart"></fieldset>
+        <fieldset class="group usage-only" id="split" aria-label="Split by"></fieldset>
+        <fieldset class="group usage-only" id="metric" aria-label="Measure"></fieldset>
+        <fieldset class="group usage-only" id="kind" aria-label="Chart"></fieldset>
         <span class="grow"></span>
         <span class="status" id="status" aria-live="polite"></span>
         <button type="button" class="btn" id="refresh">Read again</button>
       </div>
-      <div class="bar filters" id="filters"></div>
-      <section class="chart-box">
+      <div class="bar filters usage-only" id="filters"></div>
+      <section class="chart-box usage-only">
         <div class="chart-head">
           <div class="title" id="title"></div>
           <div class="note" id="cost-note" hidden></div>
@@ -39,7 +41,7 @@
         <div class="chart" id="chart"></div>
         <div class="overview" id="overview" title="The whole history: drag to choose a stretch"></div>
       </section>
-      <div class="lower">
+      <div class="lower usage-only">
         <section class="panel table-box">
           <div class="panel-head" id="table-title">Breakdown</div>
           <div class="table-scroll"><table id="table"></table></div>
@@ -52,6 +54,33 @@
           <div class="panel-head" id="heat-title">By weekday and hour</div>
           <div id="heat"></div>
         </section>
+      </div>
+      <div class="forecast" id="forecast" hidden>
+        <div class="empty" id="fc-empty" hidden></div>
+        <div class="fc-body" id="fc-body" hidden>
+          <section class="panel">
+            <div class="panel-head fc-head">Runway per account <span class="sub">Weekly limit, at each account's last 24 h burn</span></div>
+            <div class="fc-banner" id="fc-banner" hidden></div>
+            <div class="table-scroll"><table class="fc-table" id="fc-runway"></table></div>
+            <div class="note">Solid fill = spent now · hatched = projected by the reset at the last 24 h burn · line = how much of the week has passed. Times in CET.</div>
+          </section>
+          <div class="fc-row">
+            <section class="panel">
+              <div class="panel-head fc-head">Burn-down forecast <span class="sub">Weekly %, 3 days measured, 6 days ahead</span><span class="grow"></span><fieldset class="group" id="fc-mode" aria-label="Show"></fieldset></div>
+              <div class="fc-legend" id="fc-burn-legend"></div>
+              <div class="fc-chart" id="fc-burn"></div>
+              <div class="note">Each line drops to 0 at that account's weekly reset and climbs again at its 24 h burn. An account with too few readings for a rate has no forecast line; the pool counts it as holding where it is until its reset.</div>
+            </section>
+            <section class="panel">
+              <div class="panel-head fc-head">Accounts needed <span class="sub">Pool burn against what the accounts refill</span><span class="grow"></span><fieldset class="group" id="fc-days" aria-label="Average over"></fieldset></div>
+              <div class="tiles" id="fc-tiles"></div>
+              <div class="fc-controls"><span>Headroom</span><input type="range" id="fc-headroom" min="0" max="50" step="5" value="20" /><output id="fc-headroom-out">20%</output><span>for peaks and the 5-hour windows</span></div>
+              <div class="fc-legend" id="fc-bars-legend"></div>
+              <div class="fc-bars" id="fc-bars"></div>
+              <div class="note">Pool burn per day, in % of one account's weekly limit; today (hatched) is so far. Bars above the red line are days the pool spent faster than its accounts refill. Accounts needed = average burn of the full days × 7 ÷ 100%, plus headroom.</div>
+            </section>
+          </div>
+        </div>
       </div>
     </div>
     <div class="tip" id="tip" hidden></div>

@@ -3,6 +3,7 @@
 
 import { drawChart } from "./chart.js";
 import { drawHeat, drawOverview, drawTable } from "./extras.js";
+import { choices, drawForecast, forecastControls, initForecast, loadForecast } from "./forecast.js";
 import {
   colours,
   esc,
@@ -78,6 +79,10 @@ const KINDS = [
   ["bars", "Bars"],
   ["lines", "Lines"],
 ];
+const VIEWS = [
+  ["usage", "Usage"],
+  ["forecast", "Forecast"],
+];
 
 const saved = (() => {
   try {
@@ -88,6 +93,8 @@ const saved = (() => {
 })();
 
 const state = {
+  /** "usage": the chart and its tables; "forecast": the accounts' limits (forecast.js). */
+  view: saved.view === "forecast" ? "forecast" : "usage",
   range: saved.range ?? 7 * DAY,
   /** A stretch zoomed into, or null to follow `range` up to now. */
   window: null,
@@ -105,11 +112,21 @@ const state = {
 };
 
 function save() {
-  const { range, bucket, split, metric, kind, filters } = state;
+  const { view, range, bucket, split, metric, kind, filters } = state;
   try {
     localStorage.setItem(
       "token-stats",
-      JSON.stringify({ version: 2, range, bucket, split, metric, kind, filters }),
+      JSON.stringify({
+        version: 2,
+        view,
+        range,
+        bucket,
+        split,
+        metric,
+        kind,
+        filters,
+        forecast: choices,
+      }),
     );
   } catch {
     // No storage in this frame: the choices last until it closes.
@@ -327,7 +344,29 @@ function segmented(id, options, get, set) {
   }
 }
 
+/** Show the chosen view: the other's controls hide, the status line and the reading are its own. */
+function showView() {
+  const forecast = state.view === "forecast";
+  document.body.classList.toggle("forecast-on", forecast);
+  document.getElementById("forecast").hidden = !forecast;
+  if (forecast) void loadForecast();
+  else {
+    void status(false);
+    void load();
+  }
+}
+
 function controls() {
+  segmented(
+    "view",
+    VIEWS,
+    () => state.view,
+    (v) => {
+      state.view = v;
+      showView();
+    },
+  );
+  forecastControls(segmented);
   segmented(
     "range",
     RANGES.map(([l, ms]) => [ms, l]),
@@ -383,6 +422,8 @@ async function status(poll) {
   const node = document.getElementById("status");
   try {
     const s = await (await fetch("api/status")).json();
+    // The Forecast view's status line is its own (forecast.js).
+    if (state.view === "forecast") return;
     const remote =
       s.remote.error !== ""
         ? ` · remote: ${s.remote.error}`
@@ -400,12 +441,14 @@ async function status(poll) {
 document.getElementById("refresh").addEventListener("click", async () => {
   document.getElementById("status").textContent = "Reading again…";
   await fetch("api/refresh");
+  if (state.view === "forecast") return loadForecast();
   await status(false);
   await load();
 });
 
 addEventListener("keydown", (event) => {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+  if (state.view === "forecast") return;
   if (event.key === "Backspace") back();
   else if (event.key === "ArrowLeft") pan(-1);
   else if (event.key === "ArrowRight") pan(1);
@@ -414,7 +457,7 @@ addEventListener("keydown", (event) => {
 let resizing = 0;
 addEventListener("resize", () => {
   clearTimeout(resizing);
-  resizing = setTimeout(draw, 120);
+  resizing = setTimeout(redraw, 120);
 });
 
 // The window's look — its tokens, a skin's or theme's included — once the frame has loaded.
@@ -437,12 +480,19 @@ addEventListener("message", (event) => {
     if (typeof value === "string" && value !== "")
       document.documentElement.style.setProperty(ours, value);
   }
-  draw();
+  redraw();
 });
 
+function redraw() {
+  if (state.view === "forecast") drawForecast();
+  else draw();
+}
+
+initForecast(saved.forecast, save);
 controls();
 void status(true);
-void load();
+showView();
 setInterval(() => {
-  if (state.window === null) void load();
+  if (state.view === "forecast") void loadForecast();
+  else if (state.window === null) void load();
 }, 60_000);

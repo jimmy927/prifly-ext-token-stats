@@ -77,7 +77,8 @@ export function metricOf(cols: Columns, metric: Metric, i: number): number {
         (cols.output[i] ?? 0)
       );
     case "calls":
-      return 1;
+      // A call split across repositories is one call, in parts.
+      return cols.share[i] ?? 1;
   }
 }
 

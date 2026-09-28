@@ -237,6 +237,34 @@ export type ExtensionCloud = {
 /** A session the host knows, for an extension to match its things against. */
 export type ExtensionSession = { id: string; title: string; cwd: string; state: string };
 
+/** One plan limit of an account, as prifly's usage poller last read it. */
+export type AccountLimitInfo = {
+  /** The statusline's name: "5h" (5-hour session), "7d" (weekly, all models), "7F" … (weekly, one model). */
+  label: string;
+  /** "5-hour session", "Weekly, all models", "Weekly, Fable only". */
+  title: string;
+  /** Of the limit spent, 0–100 (can exceed 100). */
+  usedPercent: number;
+  /** When the window reopens, epoch ms; null when unknown. */
+  resetsAt: number | null;
+  /** The window's length in ms. */
+  windowMs: number;
+};
+
+/** A Claude account prifly holds, with its limits. */
+export type AccountInfo = {
+  /** The login's email — stable across local and cloud, what readings are keyed by. */
+  email: string;
+  /** What the reader calls it; the email when they named it nothing. */
+  label: string;
+  /** New local sessions start on this account (the "new sessions" star in the accounts UI). */
+  startsNewSessions: boolean;
+  /** When its limits were last read successfully, epoch ms; null before the first good read. */
+  readAt: number | null;
+  /** Its limits as of `readAt`; [] before the first good read. */
+  limits: AccountLimitInfo[];
+};
+
 export type ExtensionApi = {
   /**
    * Replace everything this extension shows. `bySession` is keyed by a
@@ -265,6 +293,11 @@ export type ExtensionApi = {
   paths: readonly string[];
   /** The cloud sessions of the accounts connected to prifly, read with their own tokens. */
   cloud: ExtensionCloud;
+  /**
+   * The Claude accounts prifly holds and their plan limits, from the host's
+   * usage pollers' memory — no network; a new reading at most every ~5 min.
+   */
+  accounts(): AccountInfo[];
 };
 
 export type ExtensionModule = {

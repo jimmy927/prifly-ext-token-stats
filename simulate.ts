@@ -75,18 +75,19 @@ class Tally {
     this.clipped = windows.map(() => 0);
   }
 
-  add(price: Price | null, u: Counts): void {
+  /** A whole call's counts `u`, of which `share` is counted: a call split across repositories. */
+  add(price: Price | null, u: Counts, share = 1): void {
     if (price === null) {
-      this.unpriced += 1;
+      this.unpriced += share;
       return;
     }
     const context = u.input + u.cacheWrite + u.cacheRead;
-    this.calls += 1;
-    this.actual += costOf(price, u);
+    this.calls += share;
+    this.actual += costOf(price, u) * share;
     if (context > this.largest) this.largest = context;
     for (const [k, window] of this.windows.entries()) {
-      this.costs[k] = (this.costs[k] ?? 0) + costOf(price, clip(u, window));
-      if (context > window) this.clipped[k] = (this.clipped[k] ?? 0) + 1;
+      this.costs[k] = (this.costs[k] ?? 0) + costOf(price, clip(u, window)) * share;
+      if (context > window) this.clipped[k] = (this.clipped[k] ?? 0) + share;
     }
   }
 
@@ -129,13 +130,19 @@ export function simulateRows(
   for (const i of rows) {
     const ts = cols.ts[i] ?? 0;
     if (ts < from || ts >= to) continue;
-    tally.add(cols.prices[cols.codes.model[i] ?? 0] ?? null, {
-      input: cols.input[i] ?? 0,
-      cacheWrite: cols.cacheWrite[i] ?? 0,
-      cacheWrite1h: cols.cacheWrite1h[i] ?? 0,
-      cacheRead: cols.cacheRead[i] ?? 0,
-      output: cols.output[i] ?? 0,
-    });
+    // A part of a split call is cut as the whole call would be: the window sees all its context.
+    const share = cols.share[i] ?? 1;
+    tally.add(
+      cols.prices[cols.codes.model[i] ?? 0] ?? null,
+      {
+        input: (cols.input[i] ?? 0) / share,
+        cacheWrite: (cols.cacheWrite[i] ?? 0) / share,
+        cacheWrite1h: (cols.cacheWrite1h[i] ?? 0) / share,
+        cacheRead: (cols.cacheRead[i] ?? 0) / share,
+        output: (cols.output[i] ?? 0) / share,
+      },
+      share,
+    );
   }
   return tally.result(from, to);
 }

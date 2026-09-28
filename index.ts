@@ -7,19 +7,26 @@
  * (`scan-worker.ts`); remote ones through prifly's cloud access
  * (`remote.ts`). The window's page (`panel/`) asks `api/stats` for each view
  * and `api/status` for how far the reading has got.
+ *
+ * The Forecast view asks `api/forecast`: prifly's account limits, read every
+ * 5 minutes into `readings.ts` and turned into runways by `forecast.ts`.
  */
 
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Answerer, readParams } from "./answer";
 import { applyScan } from "./archive";
+import { type ForecastAnswer, forecast } from "./forecast";
 import type { ExtensionApi, PanelRequest } from "./prifly-api";
+import { Readings } from "./readings";
 import { RemoteSessions } from "./remote";
 import type { FileOut, ScanReply, ScanRequest } from "./scan-worker";
 import { type Batch, buildColumns } from "./store";
 
 const LOCAL_EVERY = 60_000;
 const REMOTE_EVERY = 10 * 60_000;
+/** prifly's pollers read an account's limits at most this often. */
+const READINGS_EVERY = 5 * 60_000;
 
 type Running = {
   worker: Worker;
@@ -33,6 +40,12 @@ type Running = {
   lastScan: ScanReply["stats"] | null;
   scannedAt: number;
   request: ScanRequest;
+  readings: Readings;
+  /**
+   * The host's `accounts()`, or null on a prifly from before it had one: the
+   * Forecast view then says to update prifly.
+   */
+  accounts: ExtensionApi["accounts"] | null;
 };
 
 let running: Running | null = null;
@@ -44,6 +57,7 @@ function localBatches(state: Running): Batch[] {
     source: "local",
     repo: null,
     usages: file.usages,
+    ...(file.writes === undefined ? {} : { writes: file.writes }),
   }));
 }
 
@@ -79,6 +93,22 @@ async function scanRemote(state: Running): Promise<void> {
   if (await state.remote.refresh()) state.answerer = null;
 }
 
+function readLimits(state: Running): void {
+  if (state.accounts !== null) state.readings.take(state.accounts(), Date.now());
+}
+
+function forecastAnswer(state: Running, query: Record<string, string>): ForecastAnswer {
+  const now = Date.now();
+  const tz = Number(query["tz"] ?? 0);
+  const found = forecast(
+    state.readings.all(),
+    state.readings.accounts,
+    now,
+    (Number.isFinite(tz) ? tz : 0) * 60_000,
+  );
+  return { supported: state.accounts !== null, newestAt: state.readings.newestAt, ...found };
+}
+
 export function activate(api: ExtensionApi): () => void {
   const worker = new Worker(new URL("./scan-worker.ts", import.meta.url).href);
   const state: Running = {
@@ -98,6 +128,9 @@ export function activate(api: ExtensionApi): () => void {
       legacyCacheFile: join(api.folder, "cache", "local.json"),
       archiveFile: join(api.folder, "cache", "archive.json"),
     },
+    readings: new Readings(join(api.folder, "cache", "readings.jsonl")),
+    // A host older than the contract's `accounts()` has no such function.
+    accounts: typeof api.accounts === "function" ? () => api.accounts() : null,
   };
   worker.onmessage = (event: MessageEvent<ScanReply>) => received(state, event.data, api.log);
   worker.onerror = (event) => {
@@ -106,11 +139,15 @@ export function activate(api: ExtensionApi): () => void {
     state.resolveScan?.();
   };
   running = state;
+  state.readings.load(Date.now());
+  readLimits(state);
   void scanLocal(state);
   const remoteSoon = setTimeout(() => void scanRemote(state), 5_000);
   const localTimer = setInterval(() => void scanLocal(state), LOCAL_EVERY);
   const remoteTimer = setInterval(() => void scanRemote(state), REMOTE_EVERY);
+  const readingsTimer = setInterval(() => readLimits(state), READINGS_EVERY);
   return () => {
+    clearInterval(readingsTimer);
     clearTimeout(remoteSoon);
     clearInterval(localTimer);
     clearInterval(remoteTimer);
@@ -142,8 +179,11 @@ export async function panel(_panelId: string, request: PanelRequest): Promise<un
     case "status":
       return status(state);
     case "refresh":
+      readLimits(state);
       await Promise.all([scanLocal(state), scanRemote(state)]);
       return status(state);
+    case "forecast":
+      return forecastAnswer(state, request.query);
     case "stats": {
       if (state.lastScan === null) await scanLocal(state);
       const now = Date.now();

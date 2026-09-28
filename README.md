@@ -17,6 +17,58 @@ window.
 - A table of the stretch on screen (cost, output, input, cache reads, calls,
   sessions, share) and a weekday-by-hour map.
 
+## Forecast
+
+The **View** switch at the far left of the top bar goes between **Usage**
+(everything above) and **Forecast**, which asks whether the Claude accounts
+connected to prifly will last the week. The choice is saved with the others.
+On Forecast the range, bucket, split, measure and chart controls hide, and
+the status line says when the accounts' limits were last read.
+
+- **Runway per account**: each account's weekly limit (all models) as a bar —
+  solid is spent now, hatched is what it will have spent by its reset at its
+  last 24 h burn, and a thin line marks how much of the week has passed. Then
+  the burn in % an hour, when it runs out ("6 h dry before reset"), or
+  "Lasts — 25% left over", or "Spent now"; when it resets; and its 5-hour
+  window. The account new sessions start on is marked. A banner counts the
+  accounts that run dry before their reset and the account-hours with no
+  tokens that leaves.
+- **Burn-down forecast**: each account's weekly %, the last 3 days as read
+  and the next 6 days forecast at its 24 h burn, back to 0 at each reset and
+  never past 100. **Whole pool** shows instead what all accounts have left
+  together (the sum of 100 − each one's %). Click a legend entry to hide an
+  account.
+- **Accounts needed**: the pool's burn per day, in % of one account's weekly
+  limit, against what the connected accounts refill (100% a week each). The
+  average of the last 7 or 14 full days, today left out, × 7 ÷ 100% is the
+  burn in accounts' worth of weekly limit a week; with the headroom slider's
+  margin (20% by default) rounded up, it is how many accounts that burn needs.
+
+How it is worked out (`forecast.ts`):
+
+- A **rate** is the rise over the trailing 24 hours of readings, never
+  reaching back past the start of the window the latest reading is in. Under
+  an hour of readings gives no rate ("Not enough readings yet"); the pool then
+  counts that account as holding where it is until its reset.
+- A day's **pool burn** is, over all accounts, each weekly reading's rise over
+  the one before it. A reading whose reset is more than an hour later than
+  the previous one's is a new window, counted from 0.
+- Times are local, labelled CET.
+
+**Where the readings come from.** prifly's own usage pollers read each
+account's limits; `api.accounts()` hands the extension what they last read,
+from memory, at most one new reading every ~5 minutes. Every 5 minutes the
+extension asks, and appends a reading of the weekly ("7d") and 5-hour ("5h")
+limits of each account whose reading is new to `cache/readings.jsonl`
+(`readings.ts`). Readings older than 30 days are dropped. So a rate needs an
+hour of readings after the extension starts, and the daily burn fills in over
+the days after: an account with no readings yet says "No readings yet — the
+first arrives within 5 minutes".
+
+**It needs a prifly with `accounts()`** in its extension contract. On an older
+prifly the Forecast view says to update prifly, and the Usage view works as
+before.
+
 ## Model colours
 
 Split by model, each family has one hue and each version a shade of it:
@@ -122,6 +174,16 @@ counted once, by its message id.
 - **Repository** is the checkout's origin, so worktrees and extra clones of
   one repository count as that repository. **Folder** is the session's
   working directory.
+- A session started **outside any repository** (`~/src`, `~`, a scratchpad)
+  counts towards the repositories it wrote into. Each transcript, the
+  session's and each sub-agent's apart, splits its calls in proportion to
+  the files its Edit, Write, MultiEdit and NotebookEdit calls wrote into
+  each repository; what Bash wrote is not guessed at, and scratch files in no
+  repository do not count. A file is placed when it is read, and a removed
+  worktree keeps its place (`x.worktrees/y` is x). A transcript that wrote
+  into no repository shows as **(no repository)**. The parts of a split call
+  add up to it, so every total is unchanged; the Folder split still shows
+  the session's own folder.
 
 ## Install
 
