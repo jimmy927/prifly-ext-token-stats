@@ -104,13 +104,22 @@ function forecastAnswer(state: Running, query: Record<string, string>): Forecast
   const tz = Number(query["tz"] ?? 0);
   const minutes = Number.isFinite(tz) ? tz : 0;
   const readings = state.readings.all();
-  const found = forecast(readings, state.readings.accounts, now);
   const hits = [...state.local.values(), ...state.archived.values()].flatMap((f) => f.hits ?? []);
-  const resets = found.accounts.map((a) => ({
+  // Each account's reset, its latest weekly reading's; none before its first.
+  const latest = new Map<string, number | null>();
+  for (const r of readings) if (r.label === "7d") latest.set(r.email, r.resetsAt);
+  const resets = state.readings.accounts.map((a) => ({
     email: a.email,
-    resetsAt: a.weekly?.resetsAt ?? null,
+    resetsAt: latest.get(a.email) ?? null,
   }));
   const history = limitHistory(hits, resets, now);
+  // The minute each account ran out in the window it is in now: its forecast's rate when spent.
+  const ranOut = new Map(
+    history.windows.flatMap((w) =>
+      w.hitAt !== null && w.end === latest.get(w.email) ? [[w.email, w.hitAt] as const] : [],
+    ),
+  );
+  const found = forecast(readings, state.readings.accounts, now, ranOut);
   const emails = found.accounts.map((a) => a.email);
   const firsts = new Map(
     found.accounts.flatMap((a) =>

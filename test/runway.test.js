@@ -27,6 +27,9 @@ test("the banner counts spent and dry accounts, and the burn column shows each o
   expect(burnCell(read[0])).toBe('≥ 1.32 %/h<span class="small">avg since reset</span>');
   expect(burnCell(read[1])).toBe('1.51 %/h<span class="small">avg since reset</span>');
   expect(burnCell(w("lasts", 0, 0.5, "readings"))).toContain("last 24 h");
+  expect(burnCell(w("spent", 19.8, 1, "ran out"))).toBe(
+    '1.00 %/h<span class="small">rate from how it ran out</span>',
+  );
 });
 
 test("an account with no burn is named in the banner, not counted as lasting", () => {

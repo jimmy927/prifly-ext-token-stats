@@ -14,6 +14,7 @@ import {
   hasEstimate,
   left,
   pastLine,
+  pathOf,
   poolRun,
   STYLES,
 } from "./burndown-past.js";
@@ -245,14 +246,13 @@ function axes(svg, f, answer) {
   hatchLabel(svg, f, answer, stretches);
 }
 
+/** A line; a dashed one (the forecast) over a card-coloured stroke, so its dashes show on the red empty line. */
 function line(svg, f, points, colour, dashed) {
   if (points.length < 2) return;
-  const d = points
-    .map(([t, v], k) => `${k === 0 ? "M" : "L"}${f.x(t).toFixed(1)} ${f.y(v).toFixed(1)}`)
-    .join("");
-  const attrs = { d, fill: "none", stroke: colour, "stroke-width": 2, "stroke-linejoin": "round" };
-  if (dashed) attrs["stroke-dasharray"] = "5 4";
-  el("path", attrs, svg);
+  const attrs = { d: pathOf(f, points), fill: "none", "stroke-linejoin": "round" };
+  if (dashed) el("path", { ...attrs, stroke: "var(--card)", "stroke-width": 4, class: "gap" }, svg);
+  const dash = dashed ? { "stroke-dasharray": "5 4" } : {};
+  el("path", { ...attrs, stroke: colour, "stroke-width": 2, ...dash }, svg);
 }
 
 /** A dot at each reading when they span too few pixels for a line: minutes on a nine-day axis. */

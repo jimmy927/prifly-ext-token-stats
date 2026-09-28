@@ -78,7 +78,11 @@ How it is worked out (`forecast.ts`):
   reaching back past the start of the window the latest reading is in. Under
   an hour of readings, it is the latest reading's percent over the hours since
   its window began (every window starts at 0) — "avg since reset" in the
-  table, and for an account already at 100 a floor, marked ≥. Only an account
+  table. An account already at 100 reads at 0 %/h, so it burns instead at
+  the rate it ran out: 100% over the hours from its window's start to the
+  transcripts' hit ("rate from how it ran out"), or without a hit its first
+  reading at 100's average since the reset, a floor marked ≥; its forecast
+  and the pool's fall again after each reset. Only an account
   with no reset, or under an hour into its window, has no rate ("Not enough
   readings yet"); the pool then holds it where it is.
 - The **pool** line is drawn at the readings' own times and, ahead, at each

@@ -16,7 +16,7 @@ function clip(points, from) {
   return [[from, v0 + ((from - t0) / (t1 - t0)) * (v1 - v0)], ...points.slice(k)];
 }
 
-const pathOf = (f, points) =>
+export const pathOf = (f, points) =>
   points
     .map(([t, v], k) => `${k === 0 ? "M" : "L"}${f.x(t).toFixed(1)} ${f.y(v).toFixed(1)}`)
     .join("");

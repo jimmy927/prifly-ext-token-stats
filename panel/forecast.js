@@ -92,11 +92,18 @@ function fiveHour(s) {
   return `${pct(s.percent)}<span class="small">${words}</span>`;
 }
 
-/** The burn and where it comes from; an account at 100 read on its average since the reset burns at least that. */
+/**
+ * The burn and where it comes from; an account at 100 burns at the rate it
+ * ran out, or on its average since the reset at least that.
+ */
 export function burnCell(w) {
   if (w.ratePerHour === null) return '<span class="sim-none">—</span>';
   const floor = w.rateFrom === "reset" && w.outcome === "spent" ? "≥ " : "";
-  const from = w.rateFrom === "reset" ? "avg since reset" : "last 24 h";
+  const from = {
+    readings: "last 24 h",
+    reset: "avg since reset",
+    "ran out": "rate from how it ran out",
+  }[w.rateFrom];
   return `${floor}${w.ratePerHour.toFixed(2)} %/h<span class="small">${from}</span>`;
 }
 

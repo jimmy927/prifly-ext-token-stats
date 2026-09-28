@@ -175,6 +175,26 @@ test("each account burns down: % left from 100 at its reset to 0 where it ran ou
   expect(pool.find((n) => n.attrs.class === "limit-label halo").textContent).toBe("pool empty");
 });
 
+test("a spent account's forecast dashes show over the red empty line, on a card-coloured stroke", () => {
+  const answer = answerWith([]);
+  // Spent until its reset a day on, then burning 1 %/h.
+  answer.accounts[0].forecast = [
+    [FIRST, 100],
+    [now + DAY, 100],
+    [now + DAY, 0],
+    [now + 2 * DAY, 24],
+  ];
+  const nodes = draw(answer);
+  const at = (n) => nodes.indexOf(n);
+  const limit = nodes.find((n) => n.attrs.class === "limit");
+  const dashes = nodes.find((n) => n.attrs["stroke-dasharray"] === "5 4");
+  const gap = nodes.find((n) => n.attrs.class === "gap");
+  expect(gap.attrs.d).toBe(dashes.attrs.d);
+  expect(gap.attrs.stroke).toBe("var(--card)");
+  expect(at(limit)).toBeLessThan(at(gap));
+  expect(at(gap)).toBeLessThan(at(dashes));
+});
+
 test("a window that never ran out is estimated: dash-dotted in its band, unhatched, in the legend", () => {
   const start = now - 6 * DAY;
   const hit = {

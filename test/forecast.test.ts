@@ -77,7 +77,8 @@ test("an account read at 100 minutes after it started has a floor burn and a for
   const readings = [wk(-5 / 60, 100, reset), wk(0, 100, reset)];
   const spent = windowState(readings, WEEK, NOW);
   expect(spent?.outcome).toBe("spent");
-  expect(spent?.ratePerHour).toBeCloseTo(100 / (168 - 21.4), 9);
+  // Its average since the reset at its first reading at 100, 5 min before the latest.
+  expect(spent?.ratePerHour).toBeCloseTo(100 / (168 - 21.4 - 5 / 60), 9);
   expect(spent?.rateFrom).toBe("reset");
   expect(spent?.dryHours).toBeCloseTo(21.4, 9);
 });
@@ -98,6 +99,37 @@ test("an account that reaches 100 before its reset runs dry, one that does not l
   expect(lasts?.dryHours).toBe(0);
   // 68 h of the 168 h week gone.
   expect(lasts?.elapsed).toBeCloseTo((68 / 168) * 100, 6);
+});
+
+test("a spent account read at 100 for 1.7 h burns at the rate it ran out, and falls again after its reset", () => {
+  // As on 28 Sep 03:32–05:14 CET: jimmy@artemisrec at 100 since the first reading, reset 29 Sep 01:00 CET.
+  const reset = NOW + 19.8 * HOUR;
+  const start = reset - WEEK;
+  const readings = [wk(-1.7, 100, reset), wk(-1, 100, reset), wk(0, 100, reset)];
+  // The readings rise at 0 %/h over 1.7 h; without a hit its first reading at 100 is a floor.
+  expect(burnRate(readings, WEEK)).toBe(0);
+  const floor = windowState(readings, WEEK, NOW);
+  expect(floor?.ratePerHour).toBeCloseTo(100 / (168 - 19.8 - 1.7), 9);
+  expect(floor?.rateFrom).toBe("reset");
+  // With the transcripts' hit 100 h into the window: 1 %/h, how it ran out.
+  const hitAt = start + 100 * HOUR;
+  const spent = windowState(readings, WEEK, NOW, hitAt);
+  expect(spent?.ratePerHour).toBe(1);
+  expect(spent?.rateFrom).toBe("ran out");
+  expect(spent?.outcome).toBe("spent");
+  // The forecast and the pool use it: 30 h on, 10.2 h after the reset, it has used 10.2%.
+  const meta: AccountMeta = {
+    email: "a@x.com",
+    label: "a",
+    startsNewSessions: false,
+    windowMs: { "7d": WEEK, "5h": 5 * HOUR },
+  };
+  const answer = forecast(readings, [meta], NOW, new Map([["a@x.com", hitAt]]));
+  expect(answer.accounts[0]?.hourly[(NOW + 30 * HOUR - answer.grid.from) / HOUR]).toBeCloseTo(
+    10.2,
+    9,
+  );
+  expect(valueAt(answer.pool.forecast, reset + 10 * HOUR)).toBeCloseTo(90, 9);
 });
 
 test("an account at 100 is spent now, dry until its reset", () => {
@@ -165,7 +197,12 @@ test("the pool counts what each account has left, an account with no rate held",
     wk(0, 42, reset),
     wk(0, 30, null, "b@x.com"),
   ];
-  const answer = forecast(readings, [meta("a@x.com"), meta("b@x.com"), meta("c@x.com")], NOW);
+  const answer = forecast(
+    readings,
+    [meta("a@x.com"), meta("b@x.com"), meta("c@x.com")],
+    NOW,
+    new Map(),
+  );
   const [a, b, c] = answer.accounts;
   expect(a?.weekly?.ratePerHour).toBe(1);
   expect(a?.forecast.length).toBeGreaterThan(0);
@@ -196,7 +233,7 @@ test("the pool counts what each account has left, an account with no rate held",
   // At its first hour only a has been read (b from half an hour ago).
   expect(answer.grid.pool[0]).toBe(60);
   // Readings older than 3 days: it starts 3 days back.
-  const older = forecast([wk(-100, 5, reset), ...readings], [meta("a@x.com")], NOW);
+  const older = forecast([wk(-100, 5, reset), ...readings], [meta("a@x.com")], NOW, new Map());
   expect(older.grid.from).toBe(NOW - 3 * DAY);
   expect(b?.hourly[k + 10]).toBe(30);
   expect(c?.hourly.every((v) => v === null)).toBe(true);

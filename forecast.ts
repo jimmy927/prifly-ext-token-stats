@@ -41,9 +41,11 @@ export type WindowState = {
   /**
    * readings: the rise over the last 24 h of readings in this window;
    * reset: the latest percent over the hours since the window started — for
-   * an account at 100 a floor, since it got there before the reading.
+   * an account at 100 its first reading at 100, a floor, since it got there
+   * before that reading; ran out: an account at 100 whose hit the
+   * transcripts give, 100% over the hours from the window's start to it.
    */
-  rateFrom: "readings" | "reset" | null;
+  rateFrom: "readings" | "reset" | "ran out" | null;
   /**
    * spent: at 100 now; dry: reaches 100 before the reset; lasts: does not;
    * unknown: no rate, or no reset to measure against.
@@ -134,23 +136,60 @@ export function resetRate(last: Reading, windowMs: number): number | null {
   return hours * HOUR < MIN_SPAN ? null : Math.min(100, last.usedPercent) / hours;
 }
 
-/** Where the latest reading and its rate leave one window, at `now`. */
+/**
+ * The rate a spent window ran out at, so its forecast falls again after each
+ * reset — its readings, all at 100, rise at 0: 100% over the hours from the
+ * window's start to `hitAt`, or without a hit its first reading at 100's
+ * average since the start.
+ */
+export function ranOutRate(
+  readings: readonly Reading[],
+  windowMs: number,
+  hitAt: number | null,
+): { rate: number | null; from: "reset" | "ran out" } {
+  const last = readings.at(-1) as Reading;
+  if (hitAt !== null && last.resetsAt !== null) {
+    return { rate: 100 / ((hitAt - (last.resetsAt - windowMs)) / HOUR), from: "ran out" };
+  }
+  const start = last.resetsAt === null ? Number.NEGATIVE_INFINITY : last.resetsAt - windowMs;
+  const full = readings.find((r) => r.at >= start && r.usedPercent >= 100) as Reading;
+  return { rate: resetRate(full, windowMs), from: "reset" };
+}
+
+/** The rate of one window: its readings', else its average since the reset; a spent one's from how it ran out. */
+function rateOf(
+  readings: readonly Reading[],
+  windowMs: number,
+  hitAt: number | null,
+): { rate: number | null; from: WindowState["rateFrom"] } {
+  const last = readings.at(-1) as Reading;
+  if (last.usedPercent >= 100) return ranOutRate(readings, windowMs, hitAt);
+  const fromReadings = burnRate(readings, windowMs);
+  if (fromReadings !== null) return { rate: fromReadings, from: "readings" };
+  const rate = resetRate(last, windowMs);
+  return { rate, from: rate === null ? null : "reset" };
+}
+
+/**
+ * Where the latest reading and its rate leave one window, at `now`; `hitAt`
+ * the minute the transcripts say it hit 100, when they do.
+ */
 export function windowState(
   readings: readonly Reading[],
   windowMs: number,
   now: number,
+  hitAt: number | null = null,
 ): WindowState | null {
   const last = readings.at(-1);
   if (last === undefined) return null;
-  const fromReadings = burnRate(readings, windowMs);
-  const rate = fromReadings ?? resetRate(last, windowMs);
+  const { rate, from } = rateOf(readings, windowMs, hitAt);
   const { usedPercent: percent, resetsAt, at: readAt } = last;
   const state: WindowState = {
     percent,
     resetsAt,
     readAt,
     ratePerHour: rate,
-    rateFrom: fromReadings !== null ? "readings" : rate !== null ? "reset" : null,
+    rateFrom: rate === null ? null : from,
     outcome: "unknown",
     runsOutAt: null,
     atReset: null,
@@ -277,10 +316,12 @@ function accountLines(
   own: Record<Window, Reading[]> | undefined,
   now: number,
   grid: number[],
+  hitAt: number | null,
 ): { line: AccountForecast; holding: Point[] } {
   const weeklyMs = meta.windowMs["7d"];
   const sessionMs = meta.windowMs["5h"];
-  const weekly = own && weeklyMs !== undefined ? windowState(own["7d"], weeklyMs, now) : null;
+  const weekly =
+    own && weeklyMs !== undefined ? windowState(own["7d"], weeklyMs, now, hitAt) : null;
   const session = own && sessionMs !== undefined ? windowState(own["5h"], sessionMs, now) : null;
   const measured = weeklyPoints(own).filter(([t]) => t >= now - MEASURED);
   let holding: Point[] = [];
@@ -345,18 +386,25 @@ export function poolForecast(holdings: readonly Point[][], until: number): Point
   return out;
 }
 
-/** Everything the Forecast view shows, for the accounts connected now. */
+/**
+ * Everything the Forecast view shows, for the accounts connected now;
+ * `ranOut` the minute each account hit 100 in its current weekly window,
+ * where the transcripts give it.
+ */
 export function forecast(
   readings: readonly Reading[],
   accounts: readonly AccountMeta[],
   now: number,
+  ranOut: ReadonlyMap<string, number>,
 ): Omit<ForecastAnswer, "supported" | "newestAt" | "history" | "past" | "daily"> {
   // The chart starts at the first reading when that is less than 3 days back: no empty days drawn as measured.
   const from = Math.floor(Math.max(now - MEASURED, readings[0]?.at ?? now) / HOUR) * HOUR;
   const grid: number[] = [];
   for (let t = from; t <= now + AHEAD; t += HOUR) grid.push(t);
   const byEmail = byAccount(readings);
-  const worked = accounts.map((meta) => accountLines(meta, byEmail.get(meta.email), now, grid));
+  const worked = accounts.map((meta) =>
+    accountLines(meta, byEmail.get(meta.email), now, grid, ranOut.get(meta.email) ?? null),
+  );
   const lines = worked.map((w) => w.line);
   const read = accounts
     .map((meta) => weeklyPoints(byEmail.get(meta.email)))
