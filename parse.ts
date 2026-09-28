@@ -31,6 +31,15 @@ export type Usage = {
   output: number;
 };
 
+/**
+ * A call the API refused because the account's weekly limit was used up:
+ * Claude Code writes it as a synthetic assistant line with `quotaLimits`
+ * (`rateLimitType` "seven_day", `status` "rejected") and the reset in epoch
+ * seconds. `account` is the transcript's account at that line, which lags a
+ * switch made mid-session; `history.ts` settles the owner by `resetsAt`.
+ */
+export type LimitHit = { ts: number; account: string; resetsAt: number };
+
 /** When a session's account changed, oldest first: how a sub-agent's calls are attributed. */
 export type Segment = { ts: number; account: string };
 
@@ -45,6 +54,8 @@ export type ReaderState = {
   recent: string[];
   /** Files the transcript wrote since the scan last took them: see `writesOf`. */
   written: string[];
+  /** Weekly-limit refusals since the scan last took them. */
+  hits: LimitHit[];
 };
 
 export const UNKNOWN = "not recorded";
@@ -53,7 +64,16 @@ const EMAIL = /The user's email address is ([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a
 const RECENT = 64;
 
 export function freshState(account = ""): ReaderState {
-  return { account, cwd: "", title: "", prompt: "", segments: [], recent: [], written: [] };
+  return {
+    account,
+    cwd: "",
+    title: "",
+    prompt: "",
+    segments: [],
+    recent: [],
+    written: [],
+    hits: [],
+  };
 }
 
 /** The tools that write a file, and the input field that names it. */
@@ -96,6 +116,7 @@ export function interesting(line: string, wantPrompt: boolean): boolean {
     line.includes('"usage"') ||
     line.includes("session_context") ||
     line.includes('"custom-title"') ||
+    line.includes('"quotaLimits"') ||
     (wantPrompt && line.includes('"type":"user"') && !line.includes('"toolUseResult"'))
   );
 }
@@ -143,16 +164,22 @@ export function readLine(
   if (line["type"] !== "assistant" || Number.isNaN(ts)) return null;
   // Each content block has a line of its own: a tool call is on one the call's id skips.
   state.written.push(...writesOf(line));
-  return callOf(state, line, ts, fixed);
+  const charged = (fixed === null ? state.account : fixed(ts)) || UNKNOWN;
+  const hit = hitOf(line, ts, charged);
+  if (hit !== null) state.hits.push(hit);
+  return callOf(state, line, ts, charged);
+}
+
+/** The weekly-limit refusal an assistant line records, or null. */
+function hitOf(line: Line, ts: number, account: string): LimitHit | null {
+  const quota = asRecord(line["quotaLimits"]);
+  if (quota?.["rateLimitType"] !== "seven_day" || quota["status"] !== "rejected") return null;
+  const resetsAt = num(quota["resetsAt"]);
+  return resetsAt === 0 ? null : { ts, account, resetsAt: resetsAt * 1000 };
 }
 
 /** An assistant line's call, once per call id. */
-function callOf(
-  state: ReaderState,
-  line: Line,
-  ts: number,
-  fixed: ((ts: number) => string) | null,
-): Usage | null {
+function callOf(state: ReaderState, line: Line, ts: number, account: string): Usage | null {
   const message = asRecord(line["message"]);
   const usage = asRecord(message?.["usage"]);
   if (message === null || usage === null) return null;
@@ -164,7 +191,7 @@ function callOf(
   if (state.recent.length > RECENT) state.recent.shift();
   return {
     ts,
-    account: (fixed === null ? state.account : fixed(ts)) || UNKNOWN,
+    account,
     model: model || "unknown",
     cwd: state.cwd,
     input: num(usage["input_tokens"]),

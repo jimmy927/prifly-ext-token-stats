@@ -65,9 +65,16 @@ test("the archive keeps every field through its compact form", () => {
   const files = [
     file("/p/a.jsonl", 5),
     { ...file("/p/s/subagents/b.jsonl", 7), parentId: "s", writes: { odi: 3, prifly: 1 } },
+    // Refusals with no writes, and with them.
+    { ...file("/p/c.jsonl", 1), hits: [{ ts: 5, account: "a@x.com", resetsAt: 9 }] },
+    {
+      ...file("/p/d.jsonl", 2),
+      writes: { odi: 1 },
+      hits: [{ ts: 6, account: "b@x.com", resetsAt: 10 }],
+    },
   ];
   const json = JSON.parse(JSON.stringify(encodeArchive(files)));
-  expect(json.strings).toEqual(["a@x.com", "claude-opus-5-5", "/tmp/x"]);
+  expect(json.strings).toEqual(["a@x.com", "claude-opus-5-5", "/tmp/x", "b@x.com"]);
   expect(decodeArchive(json)).toEqual(files);
   expect(decodeArchive({ version: 99, strings: [], files: [] })).toBeNull();
   expect(decodeArchive({ version: 1, strings: [], files: [7] })).toBeNull();

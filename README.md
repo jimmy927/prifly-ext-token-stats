@@ -39,7 +39,15 @@ the status line says when the accounts' limits were last read.
   never past 100. **Whole pool** shows instead what all accounts have left
   together (the sum of 100 − each one's %), each account's share refilling to
   100 at its reset. Readings only minutes apart show as dots. Click a legend
-  entry to hide an account.
+  entry to hide an account. When the transcripts name any weekly window, the
+  chart reaches 7 days back: before the first reading it is hatched and has no
+  %, and under the axis each account's lane shows its weekly windows (a tick
+  at each reset) with a dot at the minute Claude Code first refused a call for
+  the weekly limit; hovering a window or a dot says which account and when.
+- **Cost per day**: the last 14 days in dollars at API list prices, per
+  account stacked or, with Whole pool, the pool's total. It is cost, never a
+  % of any limit: the dollars that took an account to 100% ranged from $469
+  to $3,541 a week (15–27 Sep 2026).
 - **Accounts needed**: the pool's burn per day, in % of one account's weekly
   limit, against what the connected accounts refill (100% a week each). The
   average of the last 7 or 14 full days, today left out, × 7 ÷ 100% is the
@@ -62,6 +70,15 @@ How it is worked out (`forecast.ts`):
   the one before it. A reading whose reset is more than an hour later than
   the previous one's is a new window, counted from 0.
 - Times are local, labelled CET.
+- A **weekly-limit refusal** is the synthetic line Claude Code writes for a
+  refused call, with `quotaLimits` `seven_day` / `rejected` and its reset
+  (`parse.ts`). The transcript's account lags a switch made mid-session, so a
+  refusal goes to the account whose current reset it matches a whole number
+  of weeks aside, within 30 minutes (`history.ts`); refusals matching no
+  account prifly holds are counted in the note, not drawn. A window is shown
+  for each account's latest reading's reset and each reset a refusal names;
+  none is inferred by adding weeks, since resets move. Remote sessions carry
+  no refusals.
 
 **Where the readings come from.** prifly's own usage pollers read each
 account's limits; `api.accounts()` hands the extension what they last read,

@@ -45,6 +45,7 @@ test("the burn-down note says what each mode draws and when readings began", () 
     firstAt: now - 8 * 60_000,
     grid: { from: Date.UTC(2026, 8, 28, 1) },
     accounts: [{}, {}, {}, {}, {}],
+    history: { from: now - 7 * 86_400_000, windows: [], unplaced: 0 },
   };
   expect(burndownNote("pool", answer)).toContain("at most 500%");
   expect(burndownNote("pool", answer)).toContain("refills to 100");
@@ -58,4 +59,31 @@ test("the burn-down note says what each mode draws and when readings began", () 
   expect(burndownSpan({ ...answer, firstAt: now - 5 * 3_600_000, grid: { from: 0 } })).toBe(
     "Weekly %, 5 h measured, 6 days ahead",
   );
+  expect(burndownNote("accounts", answer)).not.toContain("lane");
+});
+
+test("with weekly windows from the transcripts the header and note say the chart reaches back", () => {
+  const now = Date.UTC(2026, 8, 28, 1, 40);
+  const window = { email: "a@x.com", start: now - 5 * 86_400_000, end: now + 2 * 86_400_000 };
+  const answer = {
+    now,
+    firstAt: now - 8 * 60_000,
+    grid: { from: Date.UTC(2026, 8, 28, 1) },
+    accounts: [{}, {}],
+    history: {
+      from: now - 7 * 86_400_000,
+      windows: [
+        { ...window, hitAt: now - 86_400_000, refusals: 3, lastRefusalAt: now - 3_600_000 },
+      ],
+      unplaced: 2,
+    },
+  };
+  expect(burndownSpan(answer)).toBe(
+    "Weekly %, 8 min measured, 6 days ahead · weekly windows 7 days back",
+  );
+  const note = burndownNote("accounts", answer);
+  expect(note).toContain("where the % lines start");
+  expect(note).toContain("none exists before the readings");
+  expect(note).toContain("2 refusals in the last 7 days matched no account");
+  expect(note).not.toContain("where the chart starts");
 });

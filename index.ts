@@ -16,7 +16,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Answerer, readParams } from "./answer";
 import { applyScan } from "./archive";
-import { type ForecastAnswer, forecast } from "./forecast";
+import { DAILY_DAYS, type ForecastAnswer, forecast } from "./forecast";
+import { costHistory, limitHistory } from "./history";
 import type { ExtensionApi, PanelRequest } from "./prifly-api";
 import { Readings } from "./readings";
 import { RemoteSessions } from "./remote";
@@ -100,13 +101,25 @@ function readLimits(state: Running): void {
 function forecastAnswer(state: Running, query: Record<string, string>): ForecastAnswer {
   const now = Date.now();
   const tz = Number(query["tz"] ?? 0);
-  const found = forecast(
-    state.readings.all(),
-    state.readings.accounts,
-    now,
-    (Number.isFinite(tz) ? tz : 0) * 60_000,
-  );
-  return { supported: state.accounts !== null, newestAt: state.readings.newestAt, ...found };
+  const minutes = Number.isFinite(tz) ? tz : 0;
+  const found = forecast(state.readings.all(), state.readings.accounts, now, minutes * 60_000);
+  const hits = [...state.local.values(), ...state.archived.values()].flatMap((f) => f.hits ?? []);
+  const resets = found.accounts.map((a) => ({
+    email: a.email,
+    resetsAt: a.weekly?.resetsAt ?? null,
+  }));
+  const { buckets, series } = answerer(state).costByDay(DAILY_DAYS, now, minutes);
+  return {
+    supported: state.accounts !== null,
+    newestAt: state.readings.newestAt,
+    ...found,
+    history: limitHistory(hits, resets, now),
+    cost: costHistory(
+      buckets,
+      series,
+      found.accounts.map((a) => a.email),
+    ),
+  };
 }
 
 export function activate(api: ExtensionApi): () => void {

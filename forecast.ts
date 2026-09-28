@@ -11,6 +11,7 @@
  * Pure functions: `index.ts` hands them the readings and the time.
  */
 
+import type { CostHistory, LimitHistory } from "./history";
 import { floorTo } from "./query";
 import type { AccountMeta, Reading, Window } from "./readings";
 
@@ -104,6 +105,10 @@ export type ForecastAnswer = {
    */
   grid: { from: number; step: number; pool: (number | null)[] };
   pool: PoolLine;
+  /** The past before the readings, from the transcripts: weekly windows and limit hits. */
+  history: LimitHistory;
+  /** Dollars per day, the last `DAILY_DAYS` days. */
+  cost: CostHistory;
 };
 
 /** The rise per hour over the trailing 24 h of `readings` (one account, one window, oldest first). */
@@ -345,7 +350,7 @@ export function forecast(
   accounts: readonly AccountMeta[],
   now: number,
   tzMs: number,
-): Omit<ForecastAnswer, "supported" | "newestAt"> {
+): Omit<ForecastAnswer, "supported" | "newestAt" | "history" | "cost"> {
   // The chart starts at the first reading when that is less than 3 days back: no empty days drawn as measured.
   const from = Math.floor(Math.max(now - MEASURED, readings[0]?.at ?? now) / HOUR) * HOUR;
   const grid: number[] = [];
