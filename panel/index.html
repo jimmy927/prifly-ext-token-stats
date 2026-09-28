@@ -77,7 +77,7 @@
               <div class="fc-controls"><span>Headroom</span><input type="range" id="fc-headroom" min="0" max="50" step="5" value="20" /><output id="fc-headroom-out">20%</output><span>for peaks and the 5-hour windows</span></div>
               <div class="fc-legend" id="fc-bars-legend"></div>
               <div class="fc-bars" id="fc-bars"></div>
-              <div class="note">Pool burn per day, in % of one account's weekly limit; today (hatched) is so far. Bars above the red line are days the pool spent faster than its accounts refill. Accounts needed = average burn of the full days × 7 ÷ 100%, plus headroom.</div>
+              <div class="note">Pool burn per day, in % of one account's weekly limit; today (hatched) is so far. Before the readings began a day is reconstructed (pale), from the same per-window curves as the Burn-down's dotted lines. A day where an account has no curve — a week that never hit its limit — is partial (dashed outline): its share is not guessed, and the day is left out of the average. Bars above the red line are days the pool spent faster than its accounts refill. Accounts needed = average burn of the full days, read or reconstructed, × 7 ÷ 100%, plus headroom.</div>
             </section>
           </div>
         </div>
