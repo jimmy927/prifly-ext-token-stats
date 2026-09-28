@@ -20,6 +20,12 @@ export type FileOut = {
   parentId: string | null;
   title: string;
   usages: Usage[];
+  /**
+   * How many files the transcript wrote into each repository, as placed when
+   * they were read (`repoOfPath`). Absent where none was, and on transcripts
+   * archived before writes were kept.
+   */
+  writes?: Record<string, number>;
 };
 
 const ARCHIVE_VERSION = 1;
@@ -33,7 +39,10 @@ const ARCHIVE_VERSION = 1;
 type PackedUsage =
   | [number, number, number, number, number, number, number, number]
   | [number, number, number, number, number, number, number, number, number];
-type PackedFile = [string, string, string | null, string, PackedUsage[]];
+/** path, session, parent, title, calls, and the writes where there were any. */
+type PackedFile =
+  | [string, string, string | null, string, PackedUsage[]]
+  | [string, string, string | null, string, PackedUsage[], Record<string, number>];
 type ArchiveJson = { version: number; strings: string[]; files: PackedFile[] };
 
 export function encodeArchive(files: Iterable<FileOut>): ArchiveJson {
@@ -47,8 +56,8 @@ export function encodeArchive(files: Iterable<FileOut>): ArchiveJson {
     }
     return at;
   };
-  const packed = [...files].map(
-    (file): PackedFile => [
+  const packed = [...files].map((file): PackedFile => {
+    const head = [
       file.path,
       file.sessionId,
       file.parentId,
@@ -66,8 +75,9 @@ export function encodeArchive(files: Iterable<FileOut>): ArchiveJson {
         ] as const;
         return u.cacheWrite1h === undefined ? [...counts] : [...counts, u.cacheWrite1h];
       }),
-    ],
-  );
+    ] as const;
+    return file.writes === undefined ? [...head] : [...head, file.writes];
+  });
   return { version: ARCHIVE_VERSION, strings, files: packed };
 }
 
@@ -89,11 +99,12 @@ export function decodeArchive(raw: unknown): FileOut[] | null {
 
 function unpack(strings: string[], files: PackedFile[]): FileOut[] {
   const str = (at: number) => strings[at] ?? "";
-  return files.map(([path, sessionId, parentId, title, usages]) => ({
+  return files.map(([path, sessionId, parentId, title, usages, writes]) => ({
     path,
     sessionId,
     parentId,
     title,
+    ...(writes === undefined ? {} : { writes }),
     usages: usages.map(
       ([ts, account, model, cwd, input, cacheWrite, cacheRead, output, cacheWrite1h]) => ({
         ts,

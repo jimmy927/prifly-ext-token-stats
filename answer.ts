@@ -129,7 +129,7 @@ export class Answerer {
     let calls = 0;
     for (const i of inRange) {
       if (this.cols.priced[i] === 1) continue;
-      calls += 1;
+      calls += this.cols.share[i] ?? 1;
       models.add(this.cols.codes.model[i] ?? 0);
     }
     return { calls, models: [...models].map((code) => this.cols.names.model[code] ?? "?").sort() };
@@ -250,7 +250,7 @@ export class Answerer {
       row.output += this.cols.output[i] ?? 0;
       row.input += (this.cols.input[i] ?? 0) + (this.cols.cacheWrite[i] ?? 0);
       row.cacheRead += this.cols.cacheRead[i] ?? 0;
-      row.calls += 1;
+      row.calls += this.cols.share[i] ?? 1;
       row.sessionSet.add(this.cols.codes.session[i] ?? 0);
     }
     return [...rows.values()]

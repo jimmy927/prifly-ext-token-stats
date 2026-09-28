@@ -16,6 +16,7 @@ import { lstatSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type FileOut, loadArchive, saveArchive, settleArchive } from "./archive";
 import { accountAt, freshState, type ReaderState, readText } from "./parse";
+import { repoOfPath } from "./where";
 
 declare const self: Worker;
 
@@ -37,7 +38,8 @@ export type ScanReply = {
 };
 
 // 2: calls keep their 1-hour cache writes apart, for the cost; older caches are read again.
-const CACHE_VERSION = 2;
+// 3: transcripts keep the repositories they wrote into; older caches are read again.
+const CACHE_VERSION = 3;
 const files = new Map<string, FileState>();
 const archive = new Map<string, FileOut>();
 let loaded = false;
@@ -113,11 +115,34 @@ async function readFile(path: string): Promise<number> {
   state.usages.push(
     ...readText(state.reader, new TextDecoder().decode(bytes.subarray(0, end)), fixed),
   );
+  countWrites(state);
   state.offset += end;
   state.size = stat.size;
   state.mtime = stat.mtimeMs;
   state.title = (parent ?? state).reader.title || (parent ?? state).reader.prompt;
   return end;
+}
+
+/**
+ * Each folder's repository, as first found. A file is placed as it is read,
+ * while it most likely still exists, and the count is kept in the cache and
+ * the archive: a worktree removed since does not move what was counted.
+ */
+const repoOfFolder = new Map<string, string | null>();
+
+/** The files the reader just saw written, counted into their repositories; scratch files are not. */
+function countWrites(state: FileState): void {
+  for (const path of state.reader.written.splice(0)) {
+    const folder = dirname(path);
+    let repo = repoOfFolder.get(folder);
+    if (repo === undefined) {
+      repo = repoOfPath(path);
+      repoOfFolder.set(folder, repo);
+    }
+    if (repo === null) continue;
+    state.writes ??= {};
+    state.writes[repo] = (state.writes[repo] ?? 0) + 1;
+  }
 }
 
 const bySession = new Map<string, FileState>();
@@ -178,6 +203,7 @@ function strip(state: FileState): FileOut {
     parentId: state.parentId,
     title: state.title,
     usages: state.usages,
+    ...(state.writes === undefined ? {} : { writes: state.writes }),
   };
 }
 
