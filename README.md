@@ -51,10 +51,6 @@ the status line says when the accounts' limits were last read.
   account's first reading is in rises the same way to that reading. Whole
   pool draws them only where every account has one. A window with no hit has
   no known end and stays hatched.
-- **Cost per day**: the last 14 days in dollars at API list prices, per
-  account stacked or, with Whole pool, the pool's total. It is cost, never a
-  % of any limit: the dollars that took an account to 100% ranged from
-  $1,371 to $3,890 a week (15–27 Sep 2026).
 - **Accounts needed**: the pool's burn per day, in % of one account's weekly
   limit, against what the connected accounts refill (100% a week each). The
   average of the last 7 or 14 full days, today left out, × 7 ÷ 100% is the

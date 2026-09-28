@@ -16,8 +16,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Answerer, readParams } from "./answer";
 import { applyScan } from "./archive";
-import { DAILY_DAYS, type ForecastAnswer, forecast } from "./forecast";
-import { costHistory, limitHistory } from "./history";
+import { type ForecastAnswer, forecast } from "./forecast";
+import { limitHistory } from "./history";
 import { limitWeight, reconstructPast } from "./past";
 import type { ExtensionApi, PanelRequest } from "./prifly-api";
 import { Readings } from "./readings";
@@ -109,7 +109,6 @@ function forecastAnswer(state: Running, query: Record<string, string>): Forecast
     email: a.email,
     resetsAt: a.weekly?.resetsAt ?? null,
   }));
-  const { buckets, series } = answerer(state).costByDay(DAILY_DAYS, now, minutes);
   const history = limitHistory(hits, resets, now);
   const emails = found.accounts.map((a) => a.email);
   const firsts = new Map(
@@ -133,7 +132,6 @@ function forecastAnswer(state: Running, query: Record<string, string>): Forecast
       found.grid.from,
       now,
     ),
-    cost: costHistory(buckets, series, emails),
   };
 }
 

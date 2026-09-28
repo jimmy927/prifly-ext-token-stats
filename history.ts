@@ -1,13 +1,10 @@
 /**
  * The Forecast view's past before the readings: no weekly % survives from
- * then (prifly keeps only each account's last read), but two things do, from
- * the transcripts. The minutes an account hit its weekly limit — Claude Code
- * writes each refused call with the reset it was told — and so the weekly
- * windows those resets end; and the cost per day, in dollars at API prices.
- *
- * No single cost adds up to 100%: it differed 2.8-fold between accounts and
- * weeks on 15–27 Sep 2026 ($1,371 to $3,890). A window's own ends do fix it, 0% at
- * its reset and 100% at its hit, and `past.ts` draws the % between them.
+ * then (prifly keeps only each account's last read), but the transcripts
+ * keep the minutes an account hit its weekly limit — Claude Code writes each
+ * refused call with the reset it was told — and so the weekly windows those
+ * resets end. A window's own ends fix its %, 0% at its reset and 100% at its
+ * hit, and `past.ts` draws the % between them from its cost.
  */
 
 import type { LimitHit } from "./parse";
@@ -43,12 +40,6 @@ export type LimitHistory = {
   windows: LimitWindow[];
   /** Refusals in the stretch no account held by prifly could be given. */
   unplaced: number;
-};
-
-/** Dollars at API prices per local day, oldest first, per account held by prifly. */
-export type CostHistory = {
-  days: number[];
-  accounts: { email: string; values: number[] }[];
 };
 
 /** How far apart two resets are, a whole number of weeks aside. */
@@ -111,20 +102,4 @@ export function limitHistory(
     own.filter((w) => w.end > from).sort((a, b) => a.start - b.start),
   );
   return { from, windows: shown, unplaced };
-}
-
-/** The cost series by account, lined up with prifly's accounts; any other account's calls are left out. */
-export function costHistory(
-  days: readonly number[],
-  series: readonly { key: string; values: readonly number[] }[],
-  emails: readonly string[],
-): CostHistory {
-  const byKey = new Map(series.map((s) => [s.key, s.values]));
-  return {
-    days: [...days],
-    accounts: emails.map((email) => ({
-      email,
-      values: [...(byKey.get(email) ?? days.map(() => 0))],
-    })),
-  };
 }

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { costHistory, limitHistory, ownerOf } from "../history";
+import { limitHistory, ownerOf } from "../history";
 import type { LimitHit } from "../parse";
 
 const HOUR = 3_600_000;
@@ -79,23 +79,4 @@ test("windows come from the reading's reset and each refusal's, merged, with the
       lastRefusalAt: Date.UTC(2026, 8, 27, 21),
     },
   ]);
-});
-
-test("the cost history lines up with prifly's accounts and leaves others out", () => {
-  const days = [0, DAY, 2 * DAY];
-  const got = costHistory(
-    days,
-    [
-      { key: "b", values: [1, 2, 3] },
-      { key: "stranger", values: [9, 9, 9] },
-    ],
-    ["a", "b"],
-  );
-  expect(got).toEqual({
-    days,
-    accounts: [
-      { email: "a", values: [0, 0, 0] },
-      { email: "b", values: [1, 2, 3] },
-    ],
-  });
 });

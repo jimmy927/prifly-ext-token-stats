@@ -89,37 +89,10 @@ export class Answerer {
       cols.length === 0 ? { min: Date.now() - 86_400_000, max: Date.now() } : { min, max };
   }
 
-  /** Dollars per local day and account, the last `days` days up to `now`: the Forecast view's cost history. */
-  costByDay(
-    days: number,
-    now: number,
-    tz: number,
-  ): { buckets: number[]; series: { key: string; values: number[] }[] } {
-    const tzMs = tz * 60_000;
-    const start = floorTo(now, DAY, tzMs) - (days - 1) * DAY;
-    const buckets = Array.from({ length: days }, (_, k) => start + k * DAY);
-    const params: QueryParams = {
-      from: start,
-      to: now,
-      bucket: DAY,
-      tz,
-      split: "account",
-      metric: "cost",
-      filters: {},
-      top: days,
-    };
-    const inRange = filtered(this.cols, {}).filter((i) => (this.cols.ts[i] ?? 0) >= start);
-    const series = this.bucketed(inRange, params, DAY, buckets, tzMs).map(({ code, values }) => ({
-      key: this.cols.names.account[code] ?? "?",
-      values: [...values],
-    }));
-    return { buckets, series };
-  }
-
   /**
    * Each account's cost per hour from the hour of `from` to `to`, every
    * call's dollars times `weightOf` its model: the shape of the past weekly
-   * windows the Burn-down reconstructs (`history.ts`).
+   * windows the Burn-down reconstructs (`past.ts`).
    */
   hourlyCost(from: number, to: number, weightOf: (model: string) => number): HourlyCost {
     const start = floorTo(from, HOUR, 0);

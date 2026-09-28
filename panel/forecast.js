@@ -4,7 +4,6 @@
 
 import { burndownNote, burndownSpan, drawBurndown } from "./burndown.js";
 import { el } from "./chart.js";
-import { drawCostHistory } from "./cost-history.js";
 import { clockName, dayName, esc, niceMax } from "./format.js";
 import { hideTip, showTip } from "./tip.js";
 
@@ -294,7 +293,6 @@ export function drawForecast() {
   $("fc-burn-note").textContent = burndownNote(choices.mode, answer);
   $("fc-burn-span").textContent = burndownSpan(answer);
   drawNeeded();
-  drawCostHistory($("fc-cost"), $("fc-cost-legend"), answer, colours, choices.mode);
 }
 
 let asked = 0;
