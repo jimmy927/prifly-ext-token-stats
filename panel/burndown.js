@@ -7,6 +7,8 @@ import { clockName, dayName, esc } from "./format.js";
 import { hideTip, showTip } from "./tip.js";
 
 const M = { l: 56, r: 12, t: 16, b: 22 };
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
 const pct = (v) => `${Math.round(v)}%`;
 
 /** The accounts the legend has hidden, and "accounts" or "pool" as last drawn. */
@@ -68,12 +70,12 @@ function line(svg, f, points, colour, dashed) {
 }
 
 /** A dot at each reading when they span too few pixels for a line: minutes on a nine-day axis. */
-function dots(svg, f, points, colour) {
+function dots(svg, f, points, colour, r = 3) {
   const first = points[0];
   const last = points.at(-1);
   if (first === undefined || f.x(last[0]) - f.x(first[0]) >= 12) return;
   for (const [t, v] of points) {
-    el("circle", { cx: f.x(t), cy: f.y(v), r: 3, fill: colour, stroke: "var(--card)" }, svg);
+    el("circle", { cx: f.x(t), cy: f.y(v), r, fill: colour, stroke: "var(--card)" }, svg);
   }
 }
 
@@ -100,11 +102,16 @@ function drawPool(svg, f, answer, colours) {
 
 function drawAccounts(svg, f, answer, colours) {
   limit(svg, f, 100, "limit");
-  answer.accounts.forEach((a, i) => {
-    if (view.hidden.has(a.email)) return;
-    line(svg, f, a.forecast, colours[i], true);
-    line(svg, f, a.measured, colours[i], false);
-    dots(svg, f, a.measured, colours[i]);
+  const shown = answer.accounts
+    .map((a, i) => ({ a, colour: colours[i] }))
+    .filter(({ a }) => !view.hidden.has(a.email));
+  for (const { a, colour } of shown) {
+    line(svg, f, a.forecast, colour, true);
+    line(svg, f, a.measured, colour, false);
+  }
+  // Dots over every line, the first account's largest: accounts read at the same % and minute show as rings.
+  shown.forEach(({ a, colour }, k) => {
+    dots(svg, f, a.measured, colour, 3 + 1.5 * (shown.length - 1 - k));
   });
   return (k) => ({
     rows: answer.accounts
@@ -122,17 +129,31 @@ function nowLine(svg, f, now) {
     { ...at, x: f.x(now) + 4, "text-anchor": "start", class: "now-label halo" },
     svg,
   ).textContent = `now · ${clockName(now)} CET`;
-  el("text", { ...at, x: f.x(now) - 4, "text-anchor": "end", class: "halo" }, svg).textContent =
-    "measured";
+  // Minutes of readings leave no room left of now for the word: it would cover the axis.
+  if (f.x(now) - M.l >= 64)
+    el("text", { ...at, x: f.x(now) - 4, "text-anchor": "end", class: "halo" }, svg).textContent =
+      "measured";
   el("text", { ...at, x: f.x(now) + 124, "text-anchor": "start", class: "halo" }, svg).textContent =
     "forecast at each account's burn";
+}
+
+/** The chart's subtitle: how much of it is measured, from the first reading or 3 days back. */
+export function burndownSpan(answer) {
+  const ms = answer.now - Math.max(answer.firstAt ?? answer.now, answer.grid.from);
+  const span =
+    ms < HOUR
+      ? `${Math.round(ms / 60_000)} min`
+      : ms < 2 * DAY
+        ? `${Math.round(ms / HOUR)} h`
+        : `${Math.round(ms / DAY)} days`;
+  return `Weekly %, ${span} measured, 6 days ahead`;
 }
 
 /** What the chart under it draws, in the mode on screen, and how far back the readings go. */
 export function burndownNote(mode, answer) {
   const since =
-    answer.firstAt > answer.grid.from
-      ? ` Readings began ${dayName(answer.firstAt)} ${clockName(answer.firstAt)} CET: the measured part starts there, a dot a reading while they span only minutes.`
+    answer.firstAt >= answer.grid.from
+      ? ` Readings began ${dayName(answer.firstAt)} ${clockName(answer.firstAt)} CET, where the chart starts; while they span only minutes each is a dot, and accounts read at the same % and minute show as rings round one spot.`
       : "";
   const lines =
     mode === "pool"
@@ -158,10 +179,16 @@ function hover(svg, f, answer, rowsAt) {
     const t = from + ((event.offsetX - M.l) / f.plotW) * (f.to - from);
     const k = Math.min(pool.length - 1, Math.max(0, Math.round((t - from) / step)));
     const at = from + k * step;
+    const { rows, total } = rowsAt(k);
+    // An hour before the first reading has nothing to show, not a 0.
+    if (rows.length === 0) {
+      cross.setAttribute("visibility", "hidden");
+      hideTip();
+      return;
+    }
     cross.setAttribute("x1", f.x(at));
     cross.setAttribute("x2", f.x(at));
     cross.setAttribute("visibility", "visible");
-    const { rows, total } = rowsAt(k);
     const title = `${dayName(at)} ${clockName(at)} CET · ${at <= answer.now ? "measured" : "forecast"}`;
     showTip(event, title, rows, total, pct);
   });

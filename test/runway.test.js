@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { burndownNote } from "../panel/burndown.js";
+import { burndownNote, burndownSpan } from "../panel/burndown.js";
 import { burnCell, runwayBanner } from "../panel/forecast.js";
 
 const w = (outcome, dryHours, ratePerHour, rateFrom) => ({
@@ -39,17 +39,23 @@ test("an account with no burn is named in the banner, not counted as lasting", (
 
 test("the burn-down note says what each mode draws and when readings began", () => {
   const now = Date.UTC(2026, 8, 28, 1, 40);
+  // As on 28 Sep: readings began 03:32 CET, the chart starts at 03:00.
   const answer = {
     now,
     firstAt: now - 8 * 60_000,
-    grid: { from: now - 3 * 86_400_000 },
+    grid: { from: Date.UTC(2026, 8, 28, 1) },
     accounts: [{}, {}, {}, {}, {}],
   };
   expect(burndownNote("pool", answer)).toContain("at most 500%");
   expect(burndownNote("pool", answer)).toContain("refills to 100");
   expect(burndownNote("accounts", answer)).toContain("drops to 0 at its weekly reset");
   expect(burndownNote("accounts", answer)).toContain("Readings began");
-  expect(burndownNote("accounts", { ...answer, firstAt: now - 4 * 86_400_000 })).not.toContain(
-    "Readings began",
+  expect(burndownSpan(answer)).toBe("Weekly %, 8 min measured, 6 days ahead");
+  // Readings from before the 3 days: the chart starts 3 days back and says so.
+  const old = { ...answer, firstAt: now - 4 * 86_400_000, grid: { from: now - 3 * 86_400_000 } };
+  expect(burndownNote("accounts", old)).not.toContain("Readings began");
+  expect(burndownSpan(old)).toBe("Weekly %, 3 days measured, 6 days ahead");
+  expect(burndownSpan({ ...answer, firstAt: now - 5 * 3_600_000, grid: { from: 0 } })).toBe(
+    "Weekly %, 5 h measured, 6 days ahead",
   );
 });

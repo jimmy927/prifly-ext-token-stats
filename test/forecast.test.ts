@@ -191,6 +191,13 @@ test("the pool counts what each account has left, an account with no rate held",
     [NOW + AHEAD, 170 - (AHEAD - 50 * HOUR) / HOUR],
   ]);
   expect(answer.firstAt).toBe(NOW - 2 * HOUR);
+  // The chart starts at the first reading's hour, not 3 days back with nothing measured.
+  expect(answer.grid.from).toBe(NOW - 2 * HOUR);
+  // At its first hour only a has been read (b from half an hour ago).
+  expect(answer.grid.pool[0]).toBe(60);
+  // Readings older than 3 days: it starts 3 days back.
+  const older = forecast([wk(-100, 5, reset), ...readings], [meta("a@x.com")], NOW, CET);
+  expect(older.grid.from).toBe(NOW - 3 * DAY);
   expect(b?.hourly[k + 10]).toBe(30);
   expect(c?.hourly.every((v) => v === null)).toBe(true);
   expect(a?.hourly[k + 10]).toBe(52);

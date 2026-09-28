@@ -2,7 +2,7 @@
 // burn-down (burndown.js), and how many accounts the pool's burn needs. The
 // numbers come from `forecast.ts` at `api/forecast`; this lays them out.
 
-import { burndownNote, drawBurndown } from "./burndown.js";
+import { burndownNote, burndownSpan, drawBurndown } from "./burndown.js";
 import { el } from "./chart.js";
 import { clockName, dayName, esc, niceMax } from "./format.js";
 import { hideTip, showTip } from "./tip.js";
@@ -224,12 +224,12 @@ function drawBars() {
   shown.forEach((d, k) => {
     const today = k === shown.length - 1;
     // A day with no burn still shows as a sliver on the axis, so it reads as 0, not as missing.
-    const height = Math.max(2, y(0) - y(d.burn));
+    const tall = Math.max(2, y(0) - y(d.burn));
     const bar = {
       x: M.l + k * bw + 3,
-      y: y(0) - height,
+      y: y(0) - tall,
       width: Math.max(1, bw - 6),
-      height,
+      height: tall,
       rx: 1,
     };
     el(
@@ -291,6 +291,7 @@ export function drawForecast() {
   const colours = answer.accounts.map((_, i) => colourOf(i));
   drawBurndown($("fc-burn"), $("fc-burn-legend"), answer, colours, choices.mode);
   $("fc-burn-note").textContent = burndownNote(choices.mode, answer);
+  $("fc-burn-span").textContent = burndownSpan(answer);
   drawNeeded();
 }
 

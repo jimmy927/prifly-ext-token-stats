@@ -98,7 +98,10 @@ export type ForecastAnswer = {
   accounts: AccountForecast[];
   /** Oldest first; the last is today, so far. */
   daily: DayBurn[];
-  /** Hour by hour from 3 days back to 6 ahead: what the pool has left, the sum of 100 − percent. */
+  /**
+   * Hour by hour from the hour of the first reading, at most 3 days back, to
+   * 6 days ahead: what the pool has left, the sum of 100 − percent.
+   */
   grid: { from: number; step: number; pool: (number | null)[] };
   pool: PoolLine;
 };
@@ -343,7 +346,8 @@ export function forecast(
   now: number,
   tzMs: number,
 ): Omit<ForecastAnswer, "supported" | "newestAt"> {
-  const from = Math.floor((now - MEASURED) / HOUR) * HOUR;
+  // The chart starts at the first reading when that is less than 3 days back: no empty days drawn as measured.
+  const from = Math.floor(Math.max(now - MEASURED, readings[0]?.at ?? now) / HOUR) * HOUR;
   const grid: number[] = [];
   for (let t = from; t <= now + AHEAD; t += HOUR) grid.push(t);
   const byEmail = byAccount(readings);
