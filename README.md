@@ -34,28 +34,36 @@ the status line says when the accounts' limits were last read.
   the accounts spent now and those that run dry before their reset, the
   account-hours with no tokens that leaves, and any account with too few
   readings to tell.
-- **Burn-down forecast**: each account's weekly %, the last 3 days as read
-  and the next 6 days forecast at its burn, back to 0 at each reset and
-  never past 100. **Whole pool** shows instead what all accounts have left
-  together (the sum of 100 − each one's %), each account's share refilling to
+- **Burn-down forecast**: the % of its weekly limit each account has left,
+  the last 3 days as read and the next 6 days forecast at its burn: 100% at
+  its reset, falling to 0% (the red "empty" line) and back to 100% at its
+  next reset. **Whole pool** shows instead what all accounts have left
+  together (the sum of each one's % left), each account's share refilling to
   100 at its reset. Readings only minutes apart show as dots. Click a legend
   entry to hide an account. When the transcripts name any weekly window, the
   chart reaches 7 days back, and under the axis each account's lane shows its
-  weekly windows (a tick at each reset) with a dot at the minute Claude Code
-  first refused a call for the weekly limit; hovering a window or a dot says
-  which account and when. Before the first reading no % was read, so it is
-  reconstructed (`past.ts`), drawn thin and dotted: each window with a hit
-  rises from 0% at its reset to 100% at the hit, shaped by that window's own
-  cumulative cost with Opus 5.5 and Fable counted ×2 (fit on 15–27 Sep 2026:
-  2.2× and 1.9× Opus 5), and holds 100 until its reset; the window an
-  account's first reading is in rises the same way to that reading. Whole
-  pool draws them only where every account has one. A window with no hit has
-  no known end and stays hatched.
+  weekly windows (a tick at each reset) with a dot at the minute it ran out —
+  Claude Code's first refused call for the weekly limit; hovering a window or
+  a dot says which account and when. Before the first reading no % was read,
+  so it is reconstructed (`past.ts`), drawn thin and dotted: each window that
+  ran out falls from 100% left at its reset to 0% at that minute (a "ran out"
+  dot on the empty line), shaped by that window's own cumulative cost with
+  Opus 5.5 and Fable counted ×2 (fit on 15–27 Sep 2026: 2.2× and 1.9× Opus
+  5), and stays at 0% until its reset; the window an account's first reading
+  is in falls the same way to that reading. Whole pool draws them only where
+  every account has one. A window that never ran out has no known end and
+  stays hatched.
 - **Accounts needed**: the pool's burn per day, in % of one account's weekly
-  limit, against what the connected accounts refill (100% a week each). The
-  average of the last 7 or 14 full days, today left out, × 7 ÷ 100% is the
-  burn in accounts' worth of weekly limit a week; with the headroom slider's
-  margin (20% by default) rounded up, it is how many accounts that burn needs.
+  limit, against what the connected accounts refill (100% a week each). Days
+  before the readings are reconstructed from the same per-window curves as
+  the burn-down's dotted lines and drawn pale; a day where an account has no
+  curve (a week that never ran out) is partial, outlined dashed, and its
+  hover card names the account. The average of the last 7 or 14 full days,
+  read or reconstructed, today and partial days left out, × 7 ÷ 100% is the
+  burn in accounts' worth of weekly limit a week, and the card names the
+  reconstructed days and the partial ones left out; with the headroom
+  slider's margin (20% by default) rounded up, it is how many accounts that
+  burn needs.
 
 How it is worked out (`forecast.ts`):
 
@@ -71,7 +79,9 @@ How it is worked out (`forecast.ts`):
   pool never holds more than 100% per account.
 - A day's **pool burn** is, over all accounts, each weekly reading's rise over
   the one before it. A reading whose reset is more than an hour later than
-  the previous one's is a new window, counted from 0.
+  the previous one's is a new window, counted from 0. Before an account's
+  first reading, it is that account's reconstructed curve's rise over the day,
+  each window again from 0 (`past.ts`).
 - Times are local, labelled CET.
 - A **weekly-limit refusal** is the synthetic line Claude Code writes for a
   refused call, with `quotaLimits` `seven_day` / `rejected` and its reset

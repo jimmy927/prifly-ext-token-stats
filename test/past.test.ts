@@ -202,6 +202,20 @@ test("a day before the readings burns what its curves rose; one with a gap is pa
   expect(days.map((d) => round(d.reconstructed))).toEqual([50, 70, 44, 12]);
   // Today: 3 h of it reconstructed, then what the readings measured.
   expect(days.map((d) => round(d.burn))).toEqual([50, 70, 44, 16]);
+  // A next window read to start half a second after the reset (huboten, 25 Sep) leaves no gap.
+  const jitter = [
+    curve("c", "hit", [
+      [today - 2 * D, 0],
+      [today - D, 100],
+    ]),
+    curve("c", "reading", [
+      [today - D + 500, 0],
+      [today + 3 * H, 10],
+    ]),
+  ];
+  const cRead = new Map([["c", today + 3 * H]]);
+  const c = withPast([{ start: today, burn: 0 }], jitter, ["c"], cRead, today + 5 * H);
+  expect(c.map((d) => d.missing)).toEqual([[], [], []]);
   // No curves: the measured days' burn as it is, the hours before a's reading a gap; no readings: no days.
   const two = [
     { start: today - D, burn: 5 },

@@ -136,11 +136,15 @@ function riseOver(curves: readonly PastCurve[], a: number, b: number): number {
   return sum;
 }
 
-/** Whether `curves` cover [a, b] with no gap. */
+/**
+ * Whether `curves` cover [a, b] with no gap. One window's reset and the
+ * next one's start are read from different places and can be seconds apart
+ * (huboten's 25 Sep 00:00): a gap under a minute is none.
+ */
 function coverOver(curves: readonly PastCurve[], a: number, b: number): boolean {
   let reached = a;
   for (const c of [...curves].sort((x, y) => startOf(x) - startOf(y))) {
-    if (startOf(c) > reached) break;
+    if (startOf(c) > reached + 60_000) break;
     reached = Math.max(reached, endOf(c));
   }
   return reached >= b;
