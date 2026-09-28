@@ -146,7 +146,8 @@ test("the worker archives a deleted transcript, keeps it without the live cache,
   const request: ScanRequest = {
     type: "scan",
     root,
-    cacheFile: join(dir, "cache", "local.json"),
+    cacheFile: join(dir, "cache", "local.sqlite"),
+    legacyCacheFile: join(dir, "cache", "local.json"),
     archiveFile: join(dir, "cache", "archive.json"),
   };
   const live = new Map<string, FileOut>();

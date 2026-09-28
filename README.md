@@ -96,13 +96,16 @@ counted once, by its message id.
 - **Local** sessions are read from `~/.claude/projects`, sub-agents included,
   by a worker thread, so the host never waits on the reading. The first read
   of a few gigabytes takes about 15 seconds. After that only the files that
-  grew are read, from where the last read stopped, and a cache in `cache/`
-  keeps the results across host restarts.
+  grew are read, from where the last read stopped, and a cache,
+  `cache/local.sqlite`, keeps the results across host restarts. A scan
+  writes only what it read to it — each grown file's new calls — not the
+  whole cache. It replaced `cache/local.json`, which is read once into a new
+  `local.sqlite` and then no longer used; it can be deleted.
 - **History is kept for good.** Claude Code deletes transcripts older than
   `cleanupPeriodDays` (30 by default). When a transcript goes, what was read
   from it moves to `cache/archive.json` in the extension's folder and keeps
   counting in every chart, split and filter; the status line says how many
-  are archived. The archive is a file of its own, so deleting `local.json`
+  are archived. The archive is a file of its own, so deleting `local.sqlite`
   only makes the next read slower. If an archived transcript comes back to
   the same path, the file is counted and its archived copy dropped. Remote
   sessions likewise stay counted after they leave the API's listing.

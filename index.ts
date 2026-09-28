@@ -94,7 +94,8 @@ export function activate(api: ExtensionApi): () => void {
     request: {
       type: "scan",
       root: join(homedir(), ".claude", "projects"),
-      cacheFile: join(api.folder, "cache", "local.json"),
+      cacheFile: join(api.folder, "cache", "local.sqlite"),
+      legacyCacheFile: join(api.folder, "cache", "local.json"),
       archiveFile: join(api.folder, "cache", "archive.json"),
     },
   };

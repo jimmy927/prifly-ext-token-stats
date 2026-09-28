@@ -6,24 +6,31 @@
  * Incremental twice over. A file whose size and mtime are unchanged is not
  * opened; a file that grew is read from where the last scan stopped, with the
  * reader's state (the account in force, the folder, the title) carried over.
- * What was read is kept in a cache file, so a host restart costs a stat per
- * file rather than the whole read again.
+ * What was read is kept in a cache (`local-cache.ts`), so a host restart
+ * costs a stat per file rather than the whole read again.
  */
 
 /// <reference lib="webworker" />
 
-import { lstatSync, mkdirSync, readdirSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { lstatSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { type FileOut, loadArchive, saveArchive, settleArchive } from "./archive";
-import { accountAt, freshState, type ReaderState, readText } from "./parse";
+import { type FileState, LocalCache } from "./local-cache";
+import { accountAt, freshState, readText } from "./parse";
 
 declare const self: Worker;
 
 export type { FileOut } from "./archive";
 
-type FileState = FileOut & { size: number; mtime: number; offset: number; reader: ReaderState };
-
-export type ScanRequest = { type: "scan"; root: string; cacheFile: string; archiveFile: string };
+export type ScanRequest = {
+  type: "scan";
+  root: string;
+  /** The SQLite cache. */
+  cacheFile: string;
+  /** The JSON cache it replaced: read once, into an empty `cacheFile`. */
+  legacyCacheFile: string;
+  archiveFile: string;
+};
 export type ScanReply = {
   type: "scanned";
   /** Files that changed since the last reply — all of them in the first. */
@@ -40,19 +47,14 @@ export type ScanReply = {
 const CACHE_VERSION = 2;
 const files = new Map<string, FileState>();
 const archive = new Map<string, FileOut>();
-let loaded = false;
+let cache: LocalCache | null = null;
 let first = true;
 
-async function loadCache(cacheFile: string, archiveFile: string): Promise<void> {
-  loaded = true;
-  for (const file of await loadArchive(archiveFile)) archive.set(file.path, file);
-  const raw: unknown = await Bun.file(cacheFile)
-    .json()
-    .catch(() => null);
-  if (typeof raw !== "object" || raw === null) return;
-  const cache = raw as { version?: unknown; files?: unknown };
-  if (cache.version !== CACHE_VERSION || !Array.isArray(cache.files)) return;
-  for (const entry of cache.files as FileState[]) files.set(entry.path, entry);
+async function loadCache(request: ScanRequest): Promise<LocalCache> {
+  for (const file of await loadArchive(request.archiveFile)) archive.set(file.path, file);
+  const opened = new LocalCache(request.cacheFile, CACHE_VERSION);
+  for (const state of opened.load(request.legacyCacheFile)) files.set(state.path, state);
+  return opened;
 }
 
 /** Every transcript, sessions' own first: a sub-agent's account is read off its parent's. */
@@ -127,7 +129,7 @@ function findSession(id: string): FileState | null {
 
 async function scan(request: ScanRequest): Promise<ScanReply> {
   const started = performance.now();
-  if (!loaded) await loadCache(request.cacheFile, request.archiveFile);
+  cache ??= await loadCache(request);
   const { main, agents } = listTranscripts(request.root);
   const changed: FileOut[] = [];
   let bytes = 0;
@@ -144,7 +146,7 @@ async function scan(request: ScanRequest): Promise<ScanReply> {
   const live = new Set([...present].filter((path) => files.has(path)));
   const { archived, reclaimed } = await keep(removed, live, request.archiveFile);
   for (const path of removed) files.delete(path);
-  if (bytes > 0 || removed.length > 0) await saveCache(request.cacheFile);
+  cache.save(files);
   const ms = Math.round(performance.now() - started);
   const reply: ScanReply = {
     type: "scanned",
@@ -179,14 +181,6 @@ function strip(state: FileState): FileOut {
     title: state.title,
     usages: state.usages,
   };
-}
-
-async function saveCache(cacheFile: string): Promise<void> {
-  mkdirSync(dirname(cacheFile), { recursive: true });
-  await Bun.write(
-    cacheFile,
-    JSON.stringify({ version: CACHE_VERSION, files: [...files.values()] }),
-  );
 }
 
 self.onmessage = async (event: MessageEvent<ScanRequest>) => {
