@@ -65,6 +65,12 @@ const longFmt = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
 });
 
+/** "Sun 27 Sep", in local time. */
+export const dayName = (t) => dayFmt.format(t);
+
+/** "14:05", in local time. */
+export const clockName = (t) => timeFmt.format(t);
+
 /** A bucket's own name in a tooltip: its start, and its end when that says more. */
 export function bucketName(start, width) {
   if (width >= DAY) {
