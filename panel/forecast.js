@@ -2,8 +2,9 @@
 // burn-down (burndown.js), and how many accounts the pool's burn needs. The
 // numbers come from `forecast.ts` at `api/forecast`; this lays them out.
 
-import { drawBurndown } from "./burndown.js";
+import { burndownNote, burndownSpan, drawBurndown } from "./burndown.js";
 import { el } from "./chart.js";
+import { drawCostHistory } from "./cost-history.js";
 import { clockName, dayName, esc, niceMax } from "./format.js";
 import { hideTip, showTip } from "./tip.js";
 
@@ -75,32 +76,58 @@ function fiveHour(s) {
   return `${pct(s.percent)}<span class="small">${words}</span>`;
 }
 
+/** The burn and where it comes from; an account at 100 read on its average since the reset burns at least that. */
+export function burnCell(w) {
+  if (w.ratePerHour === null) return '<span class="sim-none">—</span>';
+  const floor = w.rateFrom === "reset" && w.outcome === "spent" ? "≥ " : "";
+  const from = w.rateFrom === "reset" ? "avg since reset" : "last 24 h";
+  return `${floor}${w.ratePerHour.toFixed(2)} %/h<span class="small">${from}</span>`;
+}
+
+/** The banner over the runway: who is out before the reset, and who has no burn to tell. */
+export function runwayBanner(read) {
+  const spent = read.filter((w) => w.outcome === "spent").length;
+  const dry = read.filter((w) => w.outcome === "dry").length;
+  const unknown = read.filter((w) => w.outcome === "unknown").length;
+  const gap = read.reduce((s, w) => s + w.dryHours, 0);
+  const untold =
+    unknown === 0 ? "" : ` ${unknown} ${unknown === 1 ? "has" : "have"} too few readings to tell.`;
+  if (spent + dry === 0)
+    return {
+      ok: true,
+      html: `<span>${read.length - unknown} of <b>${read.length}</b> accounts last until their weekly reset at their burn.${untold}</span>`,
+    };
+  const parts = [
+    spent > 0 ? `${spent} spent now` : "",
+    dry > 0 ? `${dry} run dry at their burn` : "",
+  ];
+  return {
+    ok: false,
+    html: `<span aria-hidden="true">⚠</span><span><b>${spent + dry}</b> of <b>${read.length}</b> accounts are out before their weekly reset (${parts.filter(Boolean).join(", ")}) — <b>${Math.round(gap)}</b> account-hours with no tokens.${untold}</span>`,
+  };
+}
+
 function runwayRow(a, i) {
   const next = a.startsNewSessions ? ' <span class="fc-tag next">new sessions</span>' : "";
   const who = `<td><span class="who"><i class="sw" style="background:${colourOf(i)}"></i>${esc(a.label)}${next}</span></td>`;
   const w = a.weekly;
   if (w === null)
     return `<tr class="row">${who}<td colspan="5" class="sim-none">${NO_READINGS}</td></tr>`;
-  const burn =
-    w.ratePerHour === null ? '<span class="sim-none">—</span>' : `${w.ratePerHour.toFixed(2)} %/h`;
+  const burn = burnCell(w);
   return `<tr class="row" title="${esc(a.email)}, read ${when(w.readAt)} CET">${who}
     <td>${weeklyBar(w, colourOf(i))}</td><td class="num">${burn}</td><td>${runsOut(w)}</td>
     <td>${resets(w.resetsAt)}</td><td>${fiveHour(a.session)}</td></tr>`;
 }
 
 function drawRunway() {
-  const read = answer.accounts.filter((a) => a.weekly !== null);
-  const short = read.filter((a) => a.weekly.dryHours > 0);
-  const gap = short.reduce((s, a) => s + a.weekly.dryHours, 0);
+  const read = answer.accounts.filter((a) => a.weekly !== null).map((a) => a.weekly);
+  const { ok, html } = runwayBanner(read);
   const banner = $("fc-banner");
   banner.hidden = read.length === 0;
-  banner.classList.toggle("ok", short.length === 0);
-  banner.innerHTML =
-    short.length === 0
-      ? `<span>All <b>${read.length}</b> accounts last until their weekly reset at the current burn.</span>`
-      : `<span aria-hidden="true">⚠</span><span><b>${short.length}</b> of <b>${read.length}</b> accounts run dry before their weekly reset — <b>${Math.round(gap)}</b> account-hours with no tokens at the current burn.</span>`;
+  banner.classList.toggle("ok", ok);
+  banner.innerHTML = html;
   $("fc-runway").innerHTML = `
-    <thead><tr><th>Account</th><th>Weekly limit</th><th class="num">Burn (24 h)</th><th>Runs out (CET)</th><th>Resets (CET)</th><th>5-hour window</th></tr></thead>
+    <thead><tr><th>Account</th><th>Weekly limit</th><th class="num">Burn</th><th>Runs out (CET)</th><th>Resets (CET)</th><th>5-hour window</th></tr></thead>
     <tbody>${answer.accounts.map(runwayRow).join("")}</tbody>`;
 }
 
@@ -112,7 +139,7 @@ function drawTiles() {
   $("fc-headroom-out").textContent = `${choices.headroom}%`;
   if (n === null) {
     $("fc-tiles").innerHTML =
-      `<div class="tile"><div class="k">Connected</div><div class="v">${have}</div><div class="h">accounts — the rest needs a full day of readings</div></div>`;
+      `<div class="tile"><div class="k">Connected</div><div class="v">${have}</div><div class="h">accounts — readings began ${when(answer.firstAt)} CET; the average needs a full day of them</div></div>`;
     return;
   }
   const short = n.need > have;
@@ -197,12 +224,14 @@ function drawBars() {
   const bw = plotW / shown.length;
   shown.forEach((d, k) => {
     const today = k === shown.length - 1;
+    // A day with no burn still shows as a sliver on the axis, so it reads as 0, not as missing.
+    const tall = Math.max(2, y(0) - y(d.burn));
     const bar = {
       x: M.l + k * bw + 3,
-      y: y(d.burn),
+      y: y(0) - tall,
       width: Math.max(1, bw - 6),
-      height: y(0) - y(d.burn),
-      rx: 2,
+      height: tall,
+      rx: 1,
     };
     el(
       "rect",
@@ -213,6 +242,14 @@ function drawBars() {
       },
       svg,
     );
+    if (today) {
+      const since = answer.firstAt > d.start ? `since ${clockName(answer.firstAt)}` : "so far";
+      el(
+        "text",
+        { x: M.l + (k + 0.5) * bw, y: bar.y - 6, "text-anchor": "middle", class: "halo" },
+        svg,
+      ).textContent = `${pct(d.burn)} ${since}`;
+    }
     const label = today ? "today" : dayName(d.start).replace(/ \S+$/, "");
     el(
       "text",
@@ -254,7 +291,10 @@ export function drawForecast() {
   drawRunway();
   const colours = answer.accounts.map((_, i) => colourOf(i));
   drawBurndown($("fc-burn"), $("fc-burn-legend"), answer, colours, choices.mode);
+  $("fc-burn-note").textContent = burndownNote(choices.mode, answer);
+  $("fc-burn-span").textContent = burndownSpan(answer);
   drawNeeded();
+  drawCostHistory($("fc-cost"), $("fc-cost-legend"), answer, colours, choices.mode);
 }
 
 let asked = 0;

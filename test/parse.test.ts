@@ -108,3 +108,33 @@ test("a deleted clone is the repository its name, less a number, names", () => {
   expect(repos.get("/nowhere/odi3")).toBe("odi3");
   expect(repos.get("/nowhere/web3")).toBe("web3");
 });
+
+/** A refused call as Claude Code writes it: a synthetic assistant line with the limit it hit. */
+const refusal = (at: string, type: string, resetsAt: number) =>
+  JSON.stringify({
+    type: "assistant",
+    timestamp: at,
+    isApiErrorMessage: true,
+    quotaLimits: { status: "rejected", resetsAt, rateLimitType: type },
+    message: {
+      model: "<synthetic>",
+      content: [{ type: "text", text: "You've hit your weekly limit · resets Oct 2, 12am" }],
+      usage: { input_tokens: 0, output_tokens: 0 },
+    },
+  });
+
+test("a weekly-limit refusal is kept with its account and reset; a 5-hour one and the call are not", () => {
+  const state = freshState();
+  const usages = readText(
+    state,
+    [
+      context("a@x.com", "2026-09-27T19:00:00Z"),
+      refusal("2026-09-27T20:03:00Z", "seven_day", 1_759_356_000),
+      refusal("2026-09-27T20:04:00Z", "five_hour", 1_759_010_400),
+    ].join("\n"),
+  );
+  expect(usages).toEqual([]);
+  expect(state.hits).toEqual([
+    { ts: Date.parse("2026-09-27T20:03:00Z"), account: "a@x.com", resetsAt: 1_759_356_000_000 },
+  ]);
+});

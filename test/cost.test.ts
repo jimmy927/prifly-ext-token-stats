@@ -107,6 +107,25 @@ test("cost is the default measure and splits by model with the dearest on top", 
   expect(result.rows.map((r) => r.key)).toEqual(result.series.map((s) => s.key));
 });
 
+test("cost by day sums each account's dollars into local days, the last ones up to now", () => {
+  const [o, h] = read(opus, haiku);
+  const b = { ...(h ?? fail()), account: "b@x.com", ts: Date.parse(AT) - 86_400_000 };
+  const cols = buildColumns([
+    { sessionId: "s", title: "t", source: "local", repo: "r", usages: [o ?? fail(), b] },
+  ]);
+  // 20 Sep 12:00 CET (UTC+2); days start at local midnight.
+  const { buckets, series } = new Answerer(cols).costByDay(3, Date.parse(AT), 120);
+  expect(buckets).toEqual([
+    Date.parse("2026-09-17T22:00:00Z"),
+    Date.parse("2026-09-18T22:00:00Z"),
+    Date.parse("2026-09-19T22:00:00Z"),
+  ]);
+  const byKey = new Map(series.map((s) => [s.key, s.values]));
+  expect(byKey.get("a@x.com")?.[2]).toBeCloseTo(0.055, 10);
+  expect(byKey.get("b@x.com")?.[1]).toBeCloseTo(0.01325, 10);
+  expect(byKey.get("b@x.com")?.[2]).toBe(0);
+});
+
 function fail(): never {
   throw new Error("missing");
 }

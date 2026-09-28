@@ -56,6 +56,9 @@ body.forecast-on .usage-only {
   align-items: center;
   gap: 12px;
 }
+.panel-head.fc-head fieldset {
+  flex-shrink: 0;
+}
 .panel-head .sub {
   font-weight: 400;
   font-size: 12px;
@@ -267,6 +270,22 @@ svg text.avg-label {
 svg .future {
   fill: var(--muted);
   fill-opacity: 0.6;
+}
+svg .before {
+  fill: url(#fc-before);
+}
+svg text.before-label {
+  fill: var(--muted-fg);
+}
+svg .lane {
+  fill-opacity: 0.35;
+}
+svg .lane-end {
+  stroke-width: 2;
+}
+svg .hit {
+  stroke: var(--card);
+  stroke-width: 1.5;
 }
 svg text.halo {
   paint-order: stroke;

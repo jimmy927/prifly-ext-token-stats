@@ -85,6 +85,33 @@ export class Answerer {
       cols.length === 0 ? { min: Date.now() - 86_400_000, max: Date.now() } : { min, max };
   }
 
+  /** Dollars per local day and account, the last `days` days up to `now`: the Forecast view's cost history. */
+  costByDay(
+    days: number,
+    now: number,
+    tz: number,
+  ): { buckets: number[]; series: { key: string; values: number[] }[] } {
+    const tzMs = tz * 60_000;
+    const start = floorTo(now, DAY, tzMs) - (days - 1) * DAY;
+    const buckets = Array.from({ length: days }, (_, k) => start + k * DAY);
+    const params: QueryParams = {
+      from: start,
+      to: now,
+      bucket: DAY,
+      tz,
+      split: "account",
+      metric: "cost",
+      filters: {},
+      top: days,
+    };
+    const inRange = filtered(this.cols, {}).filter((i) => (this.cols.ts[i] ?? 0) >= start);
+    const series = this.bucketed(inRange, params, DAY, buckets, tzMs).map(({ code, values }) => ({
+      key: this.cols.names.account[code] ?? "?",
+      values: [...values],
+    }));
+    return { buckets, series };
+  }
+
   answer(params: QueryParams, now = Date.now()): Answer {
     const rows = filtered(this.cols, params.filters);
     const tzMs = params.tz * 60_000;

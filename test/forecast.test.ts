@@ -1,5 +1,14 @@
 import { expect, test } from "bun:test";
-import { burnRate, dailyBurn, forecast, forecastPoints, valueAt, windowState } from "../forecast";
+import {
+  AHEAD,
+  burnRate,
+  dailyBurn,
+  forecast,
+  forecastPoints,
+  poolForecast,
+  valueAt,
+  windowState,
+} from "../forecast";
 import type { AccountMeta, Reading } from "../readings";
 
 const HOUR = 3_600_000;
@@ -37,14 +46,40 @@ test("the rate never reaches back past the window's own start", () => {
   expect(burnRate(readings, WEEK)).toBe(2);
 });
 
-test("readings spanning under an hour give no rate", () => {
+test("readings spanning under an hour fall back to the average since the reset", () => {
+  // Reset in 50 h: the week started 118 h ago, from 0; 12% since is 12/118 %/h.
   const reset = NOW + 50 * HOUR;
   expect(burnRate([wk(-0.5, 10, reset), wk(0, 12, reset)], WEEK)).toBeNull();
   expect(burnRate([wk(0, 12, reset)], WEEK)).toBeNull();
   expect(burnRate([], WEEK)).toBeNull();
   const state = windowState([wk(-0.5, 10, reset), wk(0, 12, reset)], WEEK, NOW);
-  expect(state?.outcome).toBe("unknown");
+  expect(state?.ratePerHour).toBe(12 / 118);
+  expect(state?.rateFrom).toBe("reset");
+  expect(state?.outcome).toBe("lasts");
   expect(state?.percent).toBe(12);
+  // Two readings a day apart are the readings' own rate.
+  expect(windowState([wk(-24, 0, reset), wk(0, 12, reset)], WEEK, NOW)?.rateFrom).toBe("readings");
+});
+
+test("no rate without a reset to count from, or under an hour into the window", () => {
+  const none = windowState([wk(-0.5, 10, null), wk(0, 12, null)], WEEK, NOW);
+  expect(none?.ratePerHour).toBeNull();
+  expect(none?.rateFrom).toBeNull();
+  expect(none?.outcome).toBe("unknown");
+  // The week started 30 min ago.
+  const fresh = windowState([wk(0, 3, NOW + WEEK - 0.5 * HOUR)], WEEK, NOW);
+  expect(fresh?.ratePerHour).toBeNull();
+});
+
+test("an account read at 100 minutes after it started has a floor burn and a forecast", () => {
+  // As on 28 Sep 03:32–03:37 CET: spent, reset in 21.4 h, two readings 5 min apart.
+  const reset = NOW + 21.4 * HOUR;
+  const readings = [wk(-5 / 60, 100, reset), wk(0, 100, reset)];
+  const spent = windowState(readings, WEEK, NOW);
+  expect(spent?.outcome).toBe("spent");
+  expect(spent?.ratePerHour).toBeCloseTo(100 / (168 - 21.4), 9);
+  expect(spent?.rateFrom).toBe("reset");
+  expect(spent?.dryHours).toBeCloseTo(21.4, 9);
 });
 
 test("an account that reaches 100 before its reset runs dry, one that does not lasts", () => {
@@ -123,11 +158,12 @@ test("the pool counts what each account has left, an account with no rate held",
     windowMs: { "7d": WEEK, "5h": 5 * HOUR },
   });
   const reset = NOW + 50 * HOUR;
+  // b has no reset to count a rate from: it is held.
   const readings = [
     wk(-2, 40, reset),
+    wk(-0.5, 30, null, "b@x.com"),
     wk(0, 42, reset),
-    wk(-0.5, 30, reset, "b@x.com"),
-    wk(0, 30, reset, "b@x.com"),
+    wk(0, 30, null, "b@x.com"),
   ];
   const answer = forecast(readings, [meta("a@x.com"), meta("b@x.com"), meta("c@x.com")], NOW, CET);
   const [a, b, c] = answer.accounts;
@@ -141,9 +177,45 @@ test("the pool counts what each account has left, an account with no rate held",
   expect(answer.grid.pool[k]).toBe(128);
   // 10 h on: a at 52, b held at 30.
   expect(answer.grid.pool[k + 10]).toBe(118);
-  // Past the reset both have 100 left, b's held and a's climbing again from 0.
-  expect(answer.grid.pool[k + 51]).toBe(199);
+  // Past a's reset it has 99 left, climbing again from 0; b still held at 70.
+  expect(answer.grid.pool[k + 51]).toBe(169);
+  // The drawn lines: measured from the first moment both had a reading, then a's reset as a step.
+  expect(answer.pool.measured).toEqual([
+    [NOW - 0.5 * HOUR, 58.5 + 70],
+    [NOW, 128],
+  ]);
+  expect(answer.pool.forecast.slice(0, 4)).toEqual([
+    [NOW, 128],
+    [NOW + 50 * HOUR, 78],
+    [NOW + 50 * HOUR, 170],
+    [NOW + AHEAD, 170 - (AHEAD - 50 * HOUR) / HOUR],
+  ]);
+  expect(answer.firstAt).toBe(NOW - 2 * HOUR);
+  // The chart starts at the first reading's hour, not 3 days back with nothing measured.
+  expect(answer.grid.from).toBe(NOW - 2 * HOUR);
+  // At its first hour only a has been read (b from half an hour ago).
+  expect(answer.grid.pool[0]).toBe(60);
+  // Readings older than 3 days: it starts 3 days back.
+  const older = forecast([wk(-100, 5, reset), ...readings], [meta("a@x.com")], NOW, CET);
+  expect(older.grid.from).toBe(NOW - 3 * DAY);
   expect(b?.hourly[k + 10]).toBe(30);
   expect(c?.hourly.every((v) => v === null)).toBe(true);
   expect(a?.hourly[k + 10]).toBe(52);
+});
+
+test("the pool forecast refills a spent account to 100 left at its reset, never past", () => {
+  // Two accounts spent now, reset in 10 h and 20 h, then burning 2 %/h again.
+  const one = forecastPoints(100, NOW, 2, NOW + 10 * HOUR, WEEK, NOW + 30 * HOUR);
+  const two = forecastPoints(100, NOW, 2, NOW + 20 * HOUR, WEEK, NOW + 30 * HOUR);
+  const pool = poolForecast([one, two], NOW + 30 * HOUR);
+  expect(pool).toEqual([
+    [NOW, 0],
+    [NOW + 10 * HOUR, 0],
+    [NOW + 10 * HOUR, 100],
+    [NOW + 20 * HOUR, 80],
+    [NOW + 20 * HOUR, 180],
+    [NOW + 30 * HOUR, 140],
+  ]);
+  expect(Math.max(...pool.map(([, v]) => v))).toBeLessThanOrEqual(200);
+  expect(poolForecast([], NOW)).toEqual([]);
 });
