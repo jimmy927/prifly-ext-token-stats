@@ -40,14 +40,21 @@ the status line says when the accounts' limits were last read.
   together (the sum of 100 − each one's %), each account's share refilling to
   100 at its reset. Readings only minutes apart show as dots. Click a legend
   entry to hide an account. When the transcripts name any weekly window, the
-  chart reaches 7 days back: before the first reading it is hatched and has no
-  %, and under the axis each account's lane shows its weekly windows (a tick
-  at each reset) with a dot at the minute Claude Code first refused a call for
-  the weekly limit; hovering a window or a dot says which account and when.
+  chart reaches 7 days back, and under the axis each account's lane shows its
+  weekly windows (a tick at each reset) with a dot at the minute Claude Code
+  first refused a call for the weekly limit; hovering a window or a dot says
+  which account and when. Before the first reading no % was read, so it is
+  reconstructed (`past.ts`), drawn thin and dotted: each window with a hit
+  rises from 0% at its reset to 100% at the hit, shaped by that window's own
+  cumulative cost with Opus 5.5 and Fable counted ×2 (fit on 15–27 Sep 2026:
+  2.2× and 1.9× Opus 5), and holds 100 until its reset; the window an
+  account's first reading is in rises the same way to that reading. Whole
+  pool draws them only where every account has one. A window with no hit has
+  no known end and stays hatched.
 - **Cost per day**: the last 14 days in dollars at API list prices, per
   account stacked or, with Whole pool, the pool's total. It is cost, never a
-  % of any limit: the dollars that took an account to 100% ranged from $469
-  to $3,541 a week (15–27 Sep 2026).
+  % of any limit: the dollars that took an account to 100% ranged from
+  $1,371 to $3,890 a week (15–27 Sep 2026).
 - **Accounts needed**: the pool's burn per day, in % of one account's weekly
   limit, against what the connected accounts refill (100% a week each). The
   average of the last 7 or 14 full days, today left out, × 7 ÷ 100% is the

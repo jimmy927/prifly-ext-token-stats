@@ -18,6 +18,7 @@ import { Answerer, readParams } from "./answer";
 import { applyScan } from "./archive";
 import { DAILY_DAYS, type ForecastAnswer, forecast } from "./forecast";
 import { costHistory, limitHistory } from "./history";
+import { limitWeight, reconstructPast } from "./past";
 import type { ExtensionApi, PanelRequest } from "./prifly-api";
 import { Readings } from "./readings";
 import { RemoteSessions } from "./remote";
@@ -109,16 +110,30 @@ function forecastAnswer(state: Running, query: Record<string, string>): Forecast
     resetsAt: a.weekly?.resetsAt ?? null,
   }));
   const { buckets, series } = answerer(state).costByDay(DAILY_DAYS, now, minutes);
+  const history = limitHistory(hits, resets, now);
+  const emails = found.accounts.map((a) => a.email);
+  const firsts = new Map(
+    found.accounts.flatMap((a) =>
+      a.measured[0] === undefined ? [] : ([[a.email, a.measured[0]]] as const),
+    ),
+  );
+  const oldest = Math.min(history.from, ...history.windows.map((w) => w.start));
+  const cost = answerer(state).hourlyCost(oldest, now, limitWeight);
   return {
     supported: state.accounts !== null,
     newestAt: state.readings.newestAt,
     ...found,
-    history: limitHistory(hits, resets, now),
-    cost: costHistory(
-      buckets,
-      series,
-      found.accounts.map((a) => a.email),
+    history,
+    past: reconstructPast(
+      history.windows,
+      cost,
+      firsts,
+      emails,
+      history.from,
+      found.grid.from,
+      now,
     ),
+    cost: costHistory(buckets, series, emails),
   };
 }
 

@@ -46,6 +46,7 @@ test("the burn-down note says what each mode draws and when readings began", () 
     grid: { from: Date.UTC(2026, 8, 28, 1) },
     accounts: [{}, {}, {}, {}, {}],
     history: { from: now - 7 * 86_400_000, windows: [], unplaced: 0 },
+    past: { curves: [] },
   };
   expect(burndownNote("pool", answer)).toContain("at most 500%");
   expect(burndownNote("pool", answer)).toContain("refills to 100");
@@ -77,6 +78,7 @@ test("with weekly windows from the transcripts the header and note say the chart
       ],
       unplaced: 2,
     },
+    past: { curves: [] },
   };
   expect(burndownSpan(answer)).toBe(
     "Weekly %, 8 min measured, 6 days ahead · weekly windows 7 days back",
@@ -86,4 +88,13 @@ test("with weekly windows from the transcripts the header and note say the chart
   expect(note).toContain("none exists before the readings");
   expect(note).toContain("2 refusals in the last 7 days matched no account");
   expect(note).not.toContain("where the chart starts");
+  // With a window reconstructed from its hit, the header and note say so and name the weighting.
+  const rebuilt = { ...answer, past: { curves: [{ email: "a@x.com" }] } };
+  expect(burndownSpan(rebuilt)).toBe(
+    "Weekly %, 8 min measured, 6 days ahead · 7 days back, reconstructed from limit hits",
+  );
+  expect(burndownNote("accounts", rebuilt)).toContain("dotted lines are reconstructed");
+  expect(burndownNote("accounts", rebuilt)).toContain("Opus 5.5 and Fable counted ×2");
+  expect(burndownNote("pool", rebuilt)).toContain("where every account has one");
+  expect(burndownNote("accounts", rebuilt)).not.toContain("none exists before the readings");
 });

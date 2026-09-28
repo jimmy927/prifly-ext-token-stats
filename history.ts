@@ -5,8 +5,9 @@
  * writes each refused call with the reset it was told — and so the weekly
  * windows those resets end; and the cost per day, in dollars at API prices.
  *
- * Neither is turned into %: the cost to reach 100% differed 7.5-fold between
- * accounts and weeks on 15–27 Sep 2026 ($469 to $3,541).
+ * No single cost adds up to 100%: it differed 2.8-fold between accounts and
+ * weeks on 15–27 Sep 2026 ($1,371 to $3,890). A window's own ends do fix it, 0% at
+ * its reset and 100% at its hit, and `past.ts` draws the % between them.
  */
 
 import type { LimitHit } from "./parse";

@@ -19,7 +19,11 @@ import { type Simulation, simulateRows } from "./simulate";
 import { type Columns, DIMENSIONS, type Dimension } from "./store";
 import { modelTones } from "./tones";
 
-const DAY = 86_400_000;
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+
+/** Weighted dollars per hour by account, hour 0 starting at `from`. */
+export type HourlyCost = { from: number; byAccount: Map<string, Float64Array> };
 
 /** `tone` is a model's family shade (`opus-0`), which the page prefers to the slot; see `tones.ts`. */
 export type Series = {
@@ -110,6 +114,32 @@ export class Answerer {
       values: [...values],
     }));
     return { buckets, series };
+  }
+
+  /**
+   * Each account's cost per hour from the hour of `from` to `to`, every
+   * call's dollars times `weightOf` its model: the shape of the past weekly
+   * windows the Burn-down reconstructs (`history.ts`).
+   */
+  hourlyCost(from: number, to: number, weightOf: (model: string) => number): HourlyCost {
+    const start = floorTo(from, HOUR, 0);
+    const length = Math.max(0, Math.ceil((to - start) / HOUR));
+    const weights = this.cols.names.model.map(weightOf);
+    const byAccount = new Map<string, Float64Array>();
+    for (let i = 0; i < this.cols.length; i++) {
+      const at = Math.floor(((this.cols.ts[i] ?? 0) - start) / HOUR);
+      if (at < 0 || at >= length) continue;
+      const email = this.cols.names.account[this.cols.codes.account[i] ?? 0] ?? "?";
+      let values = byAccount.get(email);
+      if (values === undefined) {
+        values = new Float64Array(length);
+        byAccount.set(email, values);
+      }
+      values[at] =
+        (values[at] ?? 0) +
+        (this.cols.cost[i] ?? 0) * (weights[this.cols.codes.model[i] ?? 0] ?? 1);
+    }
+    return { from: start, byAccount };
   }
 
   answer(params: QueryParams, now = Date.now()): Answer {

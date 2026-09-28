@@ -1,6 +1,6 @@
 // The Forecast view's cost per day: dollars at API list prices, per account
 // stacked or the pool's total, from the transcripts (`history.ts`). Never a
-// % of any limit: the dollars that reached 100% differed 7.5-fold.
+// % of any limit: the dollars that reached 100% differed 2.8-fold.
 
 import { el } from "./chart.js";
 import { clockName, dayName, esc, niceMax, usd } from "./format.js";

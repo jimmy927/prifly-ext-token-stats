@@ -1,8 +1,9 @@
 // The Forecast view's burn-down: each account's weekly percent, three days
 // measured and six days forecast at its 24 h burn, or what the whole pool
 // has left; under it, each account's weekly windows and the minutes it hit
-// its limit, 7 days back (`history.ts`). The numbers come from
-// `forecast.ts`; this only draws them.
+// its limit, 7 days back (`history.ts`), and before the readings each
+// window's % reconstructed between its reset and its hit (`past.ts`). The
+// numbers come from `forecast.ts`; this only draws them.
 
 import { el } from "./chart.js";
 import { clockName, dayName, esc } from "./format.js";
@@ -115,10 +116,48 @@ function drawLanes(svg, f, answer, colours) {
   });
 }
 
-/** The stretch before the first reading, hatched: no % is known there. */
-function beforeReadings(svg, f, answer) {
+/** The accounts the chart shows lines of: the pool counts every one, else the legend's. */
+const drawn = (answer) =>
+  answer.accounts.filter((a) => view.mode === "pool" || !view.hidden.has(a.email));
+
+/** Whether `a` has a reconstructed curve over `t`. */
+const covers = (answer, a, t) =>
+  answer.past.curves.some(
+    (c) => c.email === a.email && c.points[0][0] <= t && t <= c.points.at(-1)[0],
+  );
+
+/** `from`, `until` and every curve's ends between them, in order. */
+function cutsOf(answer, from, until) {
+  const ends = answer.past.curves.flatMap((c) => [c.points[0][0], c.points.at(-1)[0]]);
+  return [...new Set([from, until, ...ends.filter((t) => t > from && t < until)])].sort(
+    (a, b) => a - b,
+  );
+}
+
+/**
+ * The stretches before the first reading with no % to draw, as [start, end]:
+ * where any drawn account has no reconstructed curve (for the pool, any
+ * account at all — it has a line only where every account has one).
+ */
+export function unknownStretches(f, answer) {
   const until = Math.min(answer.firstAt ?? answer.now, answer.now);
-  if (until <= f.from) return;
+  if (until <= f.from) return [];
+  const accounts = drawn(answer);
+  const cuts = cutsOf(answer, f.from, until);
+  const out = [];
+  for (let k = 0; k < cuts.length - 1; k++) {
+    const mid = (cuts[k] + cuts[k + 1]) / 2;
+    if (accounts.length > 0 && accounts.every((a) => covers(answer, a, mid))) continue;
+    const last = out.at(-1);
+    if (last !== undefined && last[1] === cuts[k]) last[1] = cuts[k + 1];
+    else out.push([cuts[k], cuts[k + 1]]);
+  }
+  return out;
+}
+
+/** The stretches with no known %, hatched. */
+function hatch(svg, f, stretches) {
+  if (stretches.length === 0) return;
   const pattern = el(
     "pattern",
     {
@@ -131,13 +170,36 @@ function beforeReadings(svg, f, answer) {
     el("defs", {}, svg),
   );
   el("line", { x1: 0, x2: 0, y1: 0, y2: 6, stroke: "var(--border)", "stroke-width": 1 }, pattern);
-  const width = f.x(until) - M.l;
-  el("rect", { x: M.l, y: M.t, width, height: f.plotH, class: "before" }, svg);
+  for (const [a, b] of stretches) {
+    el(
+      "rect",
+      { x: f.x(a), y: M.t, width: f.x(b) - f.x(a), height: f.plotH, class: "before" },
+      svg,
+    );
+  }
+}
+
+/**
+ * The widest hatched stretch's words. Drawn after the grid: a midnight line
+ * in the near-background grid colour, drawn over them, cut the left of the
+ * "8" in "28 Sept" and left it reading "23 Sept".
+ */
+function hatchLabel(svg, f, answer, stretches) {
+  const widest = stretches.reduce(
+    (w, s) => (w === null || s[1] - s[0] > w[1] - w[0] ? s : w),
+    null,
+  );
+  if (widest === null) return;
+  const [a, b] = widest;
+  const width = f.x(b) - f.x(a);
   if (width < 150) return;
-  const label = { x: M.l + width / 2, "text-anchor": "middle", class: "before-label halo" };
-  el("text", { ...label, y: M.t + f.plotH / 2 - 4 }, svg).textContent = "no weekly % before";
+  const until = Math.min(answer.firstAt ?? answer.now, answer.now);
+  const label = { x: f.x(a) + width / 2, "text-anchor": "middle", class: "before-label halo" };
+  el("text", { ...label, y: M.t + f.plotH / 2 - 4 }, svg).textContent = "no weekly % known";
   el("text", { ...label, y: M.t + f.plotH / 2 + 12 }, svg).textContent =
-    `readings began ${dayName(until)} ${clockName(until)}`;
+    b === until
+      ? `readings began ${dayName(until)} ${clockName(until)}`
+      : "no limit hit to draw from";
 }
 
 function axes(svg, f, answer) {
@@ -147,7 +209,8 @@ function axes(svg, f, answer) {
     { x: f.x(now), y: M.t, width: f.x(f.to) - f.x(now), height: f.plotH, class: "future" },
     svg,
   );
-  beforeReadings(svg, f, answer);
+  const stretches = unknownStretches(f, answer);
+  hatch(svg, f, stretches);
   for (let k = 0; k <= 5; k++) {
     const v = (f.top * k) / 5;
     el("line", { x1: M.l, x2: f.width - M.r, y1: f.y(v), y2: f.y(v), class: "grid" }, svg);
@@ -171,6 +234,38 @@ function axes(svg, f, answer) {
   }
   const base = M.t + f.plotH;
   el("line", { x1: M.l, x2: f.width - M.r, y1: base, y2: base, class: "axis" }, svg);
+  hatchLabel(svg, f, answer, stretches);
+}
+
+/** `points` from `from` on, the one crossing it cut there. */
+function clip(points, from) {
+  const k = points.findIndex(([t]) => t >= from);
+  if (k <= 0) return k === 0 ? points : [];
+  const [t0, v0] = points[k - 1];
+  const [t1, v1] = points[k];
+  return [[from, v0 + ((from - t0) / (t1 - t0)) * (v1 - v0)], ...points.slice(k)];
+}
+
+/** A reconstructed stretch: thin and dotted, set apart from the measured and forecast lines. */
+function reconstructed(svg, f, points, colour) {
+  const shown = clip(points, f.from);
+  if (shown.length < 2) return;
+  const d = shown
+    .map(([t, v], k) => `${k === 0 ? "M" : "L"}${f.x(t).toFixed(1)} ${f.y(v).toFixed(1)}`)
+    .join("");
+  el(
+    "path",
+    {
+      d,
+      fill: "none",
+      stroke: colour,
+      class: "reconstructed",
+      "stroke-width": 1.5,
+      "stroke-dasharray": "1 3",
+      "stroke-linecap": "round",
+    },
+    svg,
+  );
 }
 
 function line(svg, f, points, colour, dashed) {
@@ -199,15 +294,19 @@ function limit(svg, f, value, words) {
   el("text", { ...label, class: "limit-label halo" }, svg).textContent = words;
 }
 
-/** The pool's line, measured up to now and forecast after, and its hover rows at hour `k`. */
+/**
+ * The pool's line — reconstructed where every account has a curve, measured
+ * up to now, forecast after — and its hover rows, given each account's %.
+ */
 function drawPool(svg, f, answer, colours) {
   limit(svg, f, 0, "pool empty");
+  for (const run of answer.past.pool) reconstructed(svg, f, run, "var(--fg)");
   line(svg, f, answer.pool.forecast, "var(--fg)", true);
   line(svg, f, answer.pool.measured, "var(--fg)", false);
   dots(svg, f, answer.pool.measured, "var(--fg)");
-  return (k) => {
+  return (percentOf) => {
     const rows = answer.accounts
-      .map((a, i) => ({ label: a.label, value: a.hourly[k], colour: colours[i] }))
+      .map((a, i) => ({ label: a.label, value: percentOf(i), colour: colours[i] }))
       .filter((r) => r.value !== null)
       .map((r) => ({ ...r, value: 100 - r.value }));
     return { rows, total: ["Pool left", pct(rows.reduce((s, r) => s + r.value, 0))] };
@@ -220,6 +319,10 @@ function drawAccounts(svg, f, answer, colours) {
     .map((a, i) => ({ a, colour: colours[i] }))
     .filter(({ a }) => !view.hidden.has(a.email));
   for (const { a, colour } of shown) {
+    for (const c of answer.past.curves.filter((c) => c.email === a.email))
+      reconstructed(svg, f, c.points, colour);
+  }
+  for (const { a, colour } of shown) {
     line(svg, f, a.forecast, colour, true);
     line(svg, f, a.measured, colour, false);
   }
@@ -227,9 +330,9 @@ function drawAccounts(svg, f, answer, colours) {
   shown.forEach(({ a, colour }, k) => {
     dots(svg, f, a.measured, colour, 3 + 1.5 * (shown.length - 1 - k));
   });
-  return (k) => ({
+  return (percentOf) => ({
     rows: answer.accounts
-      .map((a, i) => ({ label: a.label, value: a.hourly[k], colour: colours[i], email: a.email }))
+      .map((a, i) => ({ label: a.label, value: percentOf(i), colour: colours[i], email: a.email }))
       .filter((r) => r.value !== null && !view.hidden.has(r.email)),
     total: false,
   });
@@ -267,7 +370,11 @@ export function burndownSpan(answer) {
       : ms < 2 * DAY
         ? `${Math.round(ms / HOUR)} h`
         : `${Math.round(ms / DAY)} days`;
-  const back = reachesBack(answer) ? " · weekly windows 7 days back" : "";
+  const back = !reachesBack(answer)
+    ? ""
+    : answer.past.curves.length > 0
+      ? " · 7 days back, reconstructed from limit hits"
+      : " · weekly windows 7 days back";
   return `Weekly %, ${span} measured, 6 days ahead${back}`;
 }
 
@@ -282,8 +389,13 @@ export function burndownNote(mode, answer) {
       ? `What all ${answer.accounts.length} accounts have left together: the sum of 100 − each one's weekly %, so at most ${answer.accounts.length * 100}%. At an account's reset its share refills to 100 and it burns again at its rate; an account with no rate is held where it is.`
       : "Each line climbs at that account's burn, stops at the 100% limit and drops to 0 at its weekly reset. An account with no rate has no forecast line.";
   const unplaced = answer.history.unplaced;
+  const whose = mode === "pool" ? "the pool's, where every account has one," : "each";
+  const rebuilt =
+    answer.past.curves.length > 0
+      ? ` Before the readings the dotted lines are reconstructed, not read: ${whose} window that hit its limit rises from 0% at its reset to 100% at the hit as that window's own cost did, Opus 5.5 and Fable counted ×2 (the 15–27 Sep fit gave 2.2× and 1.9× Opus 5), and the window of an account's first reading rises the same way to that reading. The hatching is where no such line exists: a window with no hit has no known end, and prifly keeps only each account's latest reading.`
+      : " The hatching has no %: prifly keeps only each account's latest reading, so none exists before the readings.";
   const past = reachesBack(answer)
-    ? ` Under the axis each account's lane shows its weekly windows (a tick at each reset) and a dot at the minute Claude Code first refused a call for its weekly limit, from the transcripts. The hatching has no %: prifly keeps only each account's latest reading, so none exists before the readings.${unplaced > 0 ? ` ${unplaced} refusal${unplaced === 1 ? "" : "s"} in the last 7 days matched no account prifly holds.` : ""}`
+    ? ` Under the axis each account's lane shows its weekly windows (a tick at each reset) and a dot at the minute Claude Code first refused a call for its weekly limit, from the transcripts.${rebuilt}${unplaced > 0 ? ` ${unplaced} refusal${unplaced === 1 ? "" : "s"} in the last 7 days matched no account prifly holds.` : ""}`
     : "";
   return `${lines}${since}${past}`;
 }
@@ -301,21 +413,35 @@ function hover(svg, f, answer, rowsAt) {
     svg,
   );
   const { from, step, pool } = answer.grid;
+  const past = answer.past.hourly;
+  /** The hour under `t`, its accounts' %, and whether they are reconstructed; null off both grids. */
+  const hourAt = (t) => {
+    if (t >= from - step / 2) {
+      const k = Math.min(pool.length - 1, Math.round((t - from) / step));
+      return { at: from + k * step, percentOf: (i) => answer.accounts[i].hourly[k], past: false };
+    }
+    const k = Math.round((t - past.from) / past.step);
+    if (k < 0 || k >= past.pool.length) return null;
+    // The pool has a reconstructed % only where every account has one.
+    if (view.mode === "pool" && past.pool[k] === null) return null;
+    return { at: past.from + k * past.step, percentOf: (i) => past.byAccount[i][k], past: true };
+  };
   layer.addEventListener("mousemove", (event) => {
     const t = f.from + ((event.offsetX - M.l) / f.plotW) * (f.to - f.from);
-    const k = Math.min(pool.length - 1, Math.max(0, Math.round((t - from) / step)));
-    const at = from + k * step;
-    const { rows, total } = rowsAt(k);
-    // An hour before the first reading, or before the grid, has nothing to show, not a 0.
-    if (rows.length === 0 || t < from - step / 2) {
+    const hour = hourAt(t);
+    const { rows, total } = hour === null ? { rows: [], total: false } : rowsAt(hour.percentOf);
+    // An hour with no % known, reconstructed or read, has nothing to show, not a 0.
+    if (rows.length === 0) {
       cross.setAttribute("visibility", "hidden");
       hideTip();
       return;
     }
+    const { at } = hour;
     cross.setAttribute("x1", f.x(at));
     cross.setAttribute("x2", f.x(at));
     cross.setAttribute("visibility", "visible");
-    const title = `${dayName(at)} ${clockName(at)} CET · ${at <= answer.now ? "measured" : "forecast"}`;
+    const kind = hour.past ? "reconstructed" : at <= answer.now ? "measured" : "forecast";
+    const title = `${dayName(at)} ${clockName(at)} CET · ${kind}`;
     showTip(event, title, rows, total, pct);
   });
   layer.addEventListener("mouseleave", () => {
@@ -334,10 +460,14 @@ function drawLegend(host, answer, colours, redraw) {
             `<button type="button" data-k="${esc(a.email)}" aria-pressed="${!view.hidden.has(a.email)}" title="Click to hide or show"><i class="sw" style="background:${colours[i]}"></i><span>${esc(a.label)}</span></button>`,
         )
         .join("");
-  const key = (dash) =>
-    `<svg width="24" height="6"><line x1="0" x2="24" y1="3" y2="3" stroke="var(--muted-fg)" stroke-width="2"${dash ? ' stroke-dasharray="5 4"' : ""}/></svg>`;
+  const key = (attrs) =>
+    `<svg width="24" height="6"><line x1="0" x2="24" y1="3" y2="3" stroke="var(--muted-fg)" ${attrs}/></svg>`;
+  const rebuilt =
+    answer.past.curves.length > 0
+      ? `<span class="key">${key('stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"')}reconstructed</span>`
+      : "";
   host.innerHTML = `<div class="legend">${accounts}</div><span class="grow"></span>
-    <span class="key">${key(false)}measured</span><span class="key">${key(true)}forecast</span>`;
+    ${rebuilt}<span class="key">${key('stroke-width="2"')}measured</span><span class="key">${key('stroke-width="2" stroke-dasharray="5 4"')}forecast</span>`;
   for (const button of host.querySelectorAll("button[data-k]")) {
     button.addEventListener("click", () => {
       const k = button.dataset.k;
