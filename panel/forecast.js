@@ -130,9 +130,23 @@ export function runwayBanner(read) {
   };
 }
 
+/**
+ * The "Reset for free" offer (claude.ai Settings → Usage), for the account's
+ * row: how many are left and when the soonest-expiring one is gone. "" with
+ * none.
+ */
+export function freeResetNote(a) {
+  const r = a.freeResets;
+  if (r === null || r.left <= 0) return "";
+  const count = r.left === 1 ? "1 free reset" : `${r.left} free resets`;
+  const usable = r.usableNow ? "" : " · not usable yet";
+  return ` <span class="small">${count} · until ${when(r.endsAt)} CET${usable}</span>`;
+}
+
 function runwayRow(a, i) {
   const next = a.startsNewSessions ? ' <span class="fc-tag next">new sessions</span>' : "";
-  const who = `<td><span class="who"><i class="sw" style="background:${colourOf(i)}"></i>${esc(a.label)}${next}</span></td>`;
+  const free = freeResetNote(a);
+  const who = `<td><span class="who"><i class="sw" style="background:${colourOf(i)}"></i>${esc(a.label)}${next}${free}</span></td>`;
   const w = a.weekly;
   if (w === null)
     return `<tr class="row">${who}<td colspan="5" class="sim-none">${NO_READINGS}</td></tr>`;

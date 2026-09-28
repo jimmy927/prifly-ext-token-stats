@@ -123,6 +123,7 @@ test("a spent account read at 100 for 1.7 h burns at the rate it ran out, and fa
     label: "a",
     startsNewSessions: false,
     windowMs: { "7d": WEEK, "5h": 5 * HOUR },
+    freeResets: null,
   };
   const answer = forecast(readings, [meta], NOW, new Map([["a@x.com", hitAt]]));
   expect(answer.accounts[0]?.hourly[(NOW + 30 * HOUR - answer.grid.from) / HOUR]).toBeCloseTo(
@@ -188,6 +189,7 @@ test("the pool counts what each account has left, an account with no rate held",
     label: email,
     startsNewSessions: false,
     windowMs: { "7d": WEEK, "5h": 5 * HOUR },
+    freeResets: null,
   });
   const reset = NOW + 50 * HOUR;
   // b has no reset to count a rate from: it is held.

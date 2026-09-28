@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { burndownNote, burndownSpan } from "../panel/burndown-words.js";
-import { burnCell, runwayBanner } from "../panel/forecast.js";
+import { burnCell, freeResetNote, runwayBanner } from "../panel/forecast.js";
 
 const w = (outcome, dryHours, ratePerHour, rateFrom) => ({
   outcome,
@@ -30,6 +30,20 @@ test("the banner counts spent and dry accounts, and the burn column shows each o
   expect(burnCell(w("spent", 19.8, 1, "ran out"))).toBe(
     '1.00 %/h<span class="small">rate from how it ran out</span>',
   );
+});
+
+test("the free-reset note names how many are left and when the soonest expires; nothing without one", () => {
+  const endsAt = Date.UTC(2026, 9, 22, 16); // 22 Oct 2026 16:00 UTC
+  const one = freeResetNote({ freeResets: { left: 1, usableNow: true, endsAt } });
+  expect(one).toContain("1 free reset");
+  expect(one).not.toContain("free resets");
+  expect(one).toContain("CET");
+  expect(one).not.toContain("not usable yet");
+  const two = freeResetNote({ freeResets: { left: 2, usableNow: false, endsAt } });
+  expect(two).toContain("2 free resets");
+  expect(two).toContain("not usable yet");
+  expect(freeResetNote({ freeResets: null })).toBe("");
+  expect(freeResetNote({ freeResets: { left: 0, usableNow: true, endsAt } })).toBe("");
 });
 
 test("an account with no burn is named in the banner, not counted as lasting", () => {

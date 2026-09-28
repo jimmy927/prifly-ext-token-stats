@@ -13,6 +13,7 @@
 
 import type { LimitHistory } from "./history";
 import type { PastLines, PoolDay } from "./past";
+import type { AccountFreeReset } from "./prifly-api";
 import { floorTo } from "./query";
 import type { AccountMeta, Reading, Window } from "./readings";
 
@@ -65,6 +66,8 @@ export type AccountForecast = {
   email: string;
   label: string;
   startsNewSessions: boolean;
+  /** Its free resets ("Reset for free", claude.ai Settings → Usage); null with none. */
+  freeResets: AccountFreeReset | null;
   /** null before the first reading. */
   weekly: WindowState | null;
   session: WindowState | null;
@@ -338,6 +341,7 @@ function accountLines(
     email: meta.email,
     label: meta.label,
     startsNewSessions: meta.startsNewSessions,
+    freeResets: meta.freeResets,
     weekly,
     session,
     measured,

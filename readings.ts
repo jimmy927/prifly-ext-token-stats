@@ -13,7 +13,7 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { AccountInfo } from "./prifly-api";
+import type { AccountFreeReset, AccountInfo } from "./prifly-api";
 
 const DAY = 86_400_000;
 export const RETAIN = 30 * DAY;
@@ -38,6 +38,8 @@ export type AccountMeta = {
   startsNewSessions: boolean;
   /** Each followed window's length, from its limit; absent when the account has no such limit. */
   windowMs: Partial<Record<Window, number>>;
+  /** Its free resets ("Reset for free", claude.ai Settings → Usage); null with none. */
+  freeResets: AccountFreeReset | null;
 };
 
 const isWindow = (label: string): label is Window => (WINDOWS as readonly string[]).includes(label);
@@ -97,6 +99,7 @@ export class Readings {
       windowMs: Object.fromEntries(
         account.limits.filter((l) => isWindow(l.label)).map((l) => [l.label, l.windowMs]),
       ),
+      freeResets: account.freeResets,
     }));
     const added: Reading[] = [];
     for (const account of accounts) {

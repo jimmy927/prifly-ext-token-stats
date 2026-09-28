@@ -251,6 +251,18 @@ export type AccountLimitInfo = {
   windowMs: number;
 };
 
+/**
+ * The "Reset for free" offer (claude.ai Settings → Usage): free weekly-limit
+ * resets on top of the plan. `left` sums every live grant's `resets_left`;
+ * `usableNow`/`endsAt` are the soonest-expiring one's.
+ */
+export type AccountFreeReset = {
+  left: number;
+  usableNow: boolean;
+  /** Epoch ms. */
+  endsAt: number;
+};
+
 /** A Claude account prifly holds, with its limits. */
 export type AccountInfo = {
   /** The login's email — stable across local and cloud, what readings are keyed by. */
@@ -263,6 +275,8 @@ export type AccountInfo = {
   readAt: number | null;
   /** Its limits as of `readAt`; [] before the first good read. */
   limits: AccountLimitInfo[];
+  /** Its free resets as of `readAt`; null with none, or not read yet. */
+  freeResets: AccountFreeReset | null;
 };
 
 export type ExtensionApi = {

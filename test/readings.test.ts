@@ -24,6 +24,7 @@ const account = (readAt: number | null, weekly: number): AccountInfo => ({
   label: "Work",
   startsNewSessions: true,
   readAt,
+  freeResets: null,
   limits:
     readAt === null
       ? []
@@ -72,6 +73,7 @@ test("only a newer readAt is appended, one reading per followed limit", () => {
       label: "Work",
       startsNewSessions: true,
       windowMs: { "5h": 5 * 3.6e6, "7d": 7 * DAY },
+      freeResets: null,
     },
   ]);
   // A second store over the same file has the same readings, and still appends only newer ones.
