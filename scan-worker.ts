@@ -3,8 +3,9 @@
  * `~/.claude/projects` run to gigabytes, and the host must not stall while
  * they are read.
  *
- * Incremental twice over. A file whose size and mtime are unchanged is not
- * opened; a file that grew is read from where the last scan stopped, with the
+ * Incremental three times over. Only files a watcher saw change are stat'ed,
+ * with a full listing every ten minutes (`transcripts.ts`). A file whose size
+ * and mtime are unchanged is not opened; a file that grew is read from where the last scan stopped, with the
  * reader's state (the account in force, the folder, the title) carried over.
  * What was read is kept in a cache (`local-cache.ts`), so a host restart
  * costs a stat per file rather than the whole read again.
@@ -12,11 +13,12 @@
 
 /// <reference lib="webworker" />
 
-import { lstatSync, readdirSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { statSync } from "node:fs";
+import { dirname } from "node:path";
 import { type FileOut, loadArchive, saveArchive, settleArchive } from "./archive";
 import { type FileState, LocalCache } from "./local-cache";
 import { accountAt, freshState, readText } from "./parse";
+import { missedBy, Transcripts } from "./transcripts";
 import { repoOfPath } from "./where";
 
 declare const self: Worker;
@@ -41,7 +43,18 @@ export type ScanReply = {
   archived: FileOut[];
   /** Archived paths that are on disk again, and counted from there now. */
   reclaimed: string[];
-  stats: { files: number; read: number; bytes: number; ms: number };
+  stats: {
+    files: number;
+    read: number;
+    bytes: number;
+    ms: number;
+    /** Every transcript listed and stat'ed, or only those the watcher named (`transcripts.ts`). */
+    full: boolean;
+    dirs: number;
+    statted: number;
+    /** A full pass: files that had changed although the watcher had not named them. */
+    missed: number;
+  };
 };
 
 // 2: calls keep their 1-hour cache writes apart, for the cost; older caches are read again.
@@ -50,6 +63,7 @@ const CACHE_VERSION = 3;
 const files = new Map<string, FileState>();
 const archive = new Map<string, FileOut>();
 let cache: LocalCache | null = null;
+let transcripts: Transcripts | null = null;
 let first = true;
 
 async function loadCache(request: ScanRequest): Promise<LocalCache> {
@@ -57,28 +71,6 @@ async function loadCache(request: ScanRequest): Promise<LocalCache> {
   const opened = new LocalCache(request.cacheFile, CACHE_VERSION);
   for (const state of opened.load(request.legacyCacheFile)) files.set(state.path, state);
   return opened;
-}
-
-/** Every transcript, sessions' own first: a sub-agent's account is read off its parent's. */
-function listTranscripts(root: string): { main: string[]; agents: string[] } {
-  const main: string[] = [];
-  const agents: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) walk(path);
-      else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-        (path.includes("/subagents/") ? agents : main).push(path);
-      }
-    }
-  };
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    // `~/odi` beside `~/src/odi`: a symlinked project folder repeats another.
-    if (entry.isDirectory() && !lstatSync(join(root, entry.name)).isSymbolicLink()) {
-      walk(join(root, entry.name));
-    }
-  }
-  return { main, agents };
 }
 
 function idsOf(path: string): { sessionId: string; parentId: string | null } {
@@ -155,34 +147,56 @@ function findSession(id: string): FileState | null {
 async function scan(request: ScanRequest): Promise<ScanReply> {
   const started = performance.now();
   cache ??= await loadCache(request);
-  const { main, agents } = listTranscripts(request.root);
+  transcripts ??= new Transcripts(request.root);
+  // A turn of the event loop first: the watcher's events queued before this request are then in.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const selection = transcripts.select();
+  const candidates = [...selection.main, ...selection.agents];
   const changed: FileOut[] = [];
   let bytes = 0;
-  for (const path of [...main, ...agents]) {
+  for (const path of candidates) {
     const read = await readFile(path).catch(() => 0);
     const state = files.get(path);
     if (state !== undefined && state.parentId === null) bySession.set(state.sessionId, state);
     if (state !== undefined && (read > 0 || first)) changed.push(strip(state));
     bytes += read;
   }
-  const present = new Set([...main, ...agents]);
-  const removed = [...files.keys()].filter((path) => !present.has(path));
+  const present = new Set(candidates);
+  const removed = selection.full
+    ? [...files.keys()].filter((path) => !present.has(path))
+    : [...files.keys()].filter((path) => selection.gone.some((gone) => within(path, gone)));
   // Only a path that was read reclaims its archived copy: one that failed to read keeps it.
   const live = new Set([...present].filter((path) => files.has(path)));
   const { archived, reclaimed } = await keep(removed, live, request.archiveFile);
   for (const path of removed) files.delete(path);
   cache.save(files);
   const ms = Math.round(performance.now() - started);
+  const { full, dirs, statted, flagged } = selection;
+  const grown = first ? [] : changed.map((file) => file.path);
   const reply: ScanReply = {
     type: "scanned",
     files: changed,
     removed,
     archived: first ? [...archive.values()] : archived,
     reclaimed,
-    stats: { files: present.size, read: changed.length, bytes, ms },
+    stats: {
+      files: files.size,
+      read: changed.length,
+      bytes,
+      ms,
+      full,
+      dirs,
+      // `readFile` stats each candidate once.
+      statted: statted + candidates.length,
+      missed: flagged === null ? 0 : missedBy(request.root, flagged, grown),
+    },
   };
   first = false;
   return reply;
+}
+
+function within(path: string, gone: string): boolean {
+  return path === gone || path.startsWith(`${gone}/`);
 }
 
 /** Transcripts that left the disk go into the archive, which is written only when it changed. */
