@@ -70,6 +70,15 @@ test("windows come from the reading's reset and each refusal's, merged, with the
       refusals: 0,
       lastRefusalAt: null,
     },
+    // huboten's earliest window starts 25 Sep 00:00 CET, inside the 7 days: the one before ended there.
+    {
+      email: "huboten",
+      start: huboten - 2 * WEEK,
+      end: huboten - WEEK,
+      hitAt: null,
+      refusals: 0,
+      lastRefusalAt: null,
+    },
     {
       email: "huboten",
       start: huboten - WEEK,

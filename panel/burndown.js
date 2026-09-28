@@ -278,7 +278,13 @@ function rowOf(a, i, hour, colours) {
   const range = hour.rangeOf(i);
   const label =
     range === null ? a.label : `${a.label} · est. ${pct(100 - range[1])}–${pct(100 - range[0])}`;
-  return { label, value: 100 - value, colour: colours[i], email: a.email, estimated: range !== null };
+  return {
+    label,
+    value: 100 - value,
+    colour: colours[i],
+    email: a.email,
+    estimated: range !== null,
+  };
 }
 
 /**
@@ -292,7 +298,9 @@ function drawPool(svg, f, answer, colours) {
   line(svg, f, answer.pool.measured, "var(--fg)", false);
   dots(svg, f, answer.pool.measured, "var(--fg)");
   return (hour) => {
-    const rows = answer.accounts.map((a, i) => rowOf(a, i, hour, colours)).filter((r) => r !== null);
+    const rows = answer.accounts
+      .map((a, i) => rowOf(a, i, hour, colours))
+      .filter((r) => r !== null);
     const sum = pct(rows.reduce((s, r) => s + r.value, 0));
     const range = hour.poolRange;
     const text = range === null ? sum : `${sum} (${pct(range[0])}–${pct(range[1])})`;

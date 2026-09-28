@@ -48,7 +48,7 @@ const now = FIRST + 8 * 60_000;
 const gridFrom = Math.floor(FIRST / H) * H;
 const pastFrom = Math.floor((now - 7 * DAY) / H) * H;
 
-function answerWith(curves) {
+function answerWith(curves, pool = []) {
   const account = (email) => ({
     email,
     label: email,
@@ -76,13 +76,26 @@ function answerWith(curves) {
       ],
       unplaced: 0,
     },
-    past: { curves, pool: [], hourly: { from: pastFrom, step: H, byAccount: [[], []], pool: [] } },
+    past: {
+      curves,
+      per100: 2400,
+      band: 0.3,
+      pool,
+      hourly: {
+        from: pastFrom,
+        step: H,
+        byAccount: [[], []],
+        range: [[], []],
+        pool: [],
+        poolRange: [],
+      },
+    },
   };
 }
 
-function draw(answer, mode = "accounts") {
+function draw(answer, mode = "accounts", legend = new FakeNode("div")) {
   const host = new FakeNode("div");
-  drawBurndown(host, new FakeNode("div"), answer, ["red", "blue"], mode);
+  drawBurndown(host, legend, answer, ["red", "blue"], mode);
   return host.children[0].children;
 }
 
@@ -160,4 +173,70 @@ test("each account burns down: % left from 100 at its reset to 0 where it ran ou
   const dot = pool.find((n) => n.tag === "circle" && n.attrs.fill === "var(--fg)");
   expect(Number(dot.attrs.cy)).toBeCloseTo(16 + 258 - (80 / 200) * 258, 6);
   expect(pool.find((n) => n.attrs.class === "limit-label halo").textContent).toBe("pool empty");
+});
+
+test("a window that never ran out is estimated: dash-dotted in its band, unhatched, in the legend", () => {
+  const start = now - 6 * DAY;
+  const hit = {
+    email: "a",
+    start,
+    end: now + DAY,
+    anchor: "hit",
+    points: [
+      [start, 0],
+      [now - 4 * DAY, 100],
+      [FIRST, 100],
+    ],
+  };
+  const guess = {
+    email: "b",
+    start,
+    end: FIRST,
+    anchor: "estimate",
+    points: [
+      [start, 0],
+      [FIRST, 40],
+    ],
+    band: [
+      [start, 0, 0],
+      [FIRST, 28, 52],
+    ],
+  };
+  const legend = new FakeNode("div");
+  const nodes = draw(answerWith([hit, guess]), "accounts", legend);
+  const est = nodes.filter((n) => n.attrs.class === "estimated");
+  expect(est).toHaveLength(1);
+  expect(est[0].attrs.stroke).toBe("blue");
+  expect(est[0].attrs["stroke-dasharray"]).toBe("7 2 1 2");
+  const band = nodes.filter((n) => n.attrs.class === "band");
+  expect(band).toHaveLength(1);
+  expect(band[0].attrs.fill).toBe("blue");
+  expect(band[0].attrs.d.endsWith("Z")).toBe(true);
+  // Both accounts have a line from the window's start: hatched only before it, none left to say "never ran out".
+  expect(nodes.filter((n) => n.attrs.class === "before")).toHaveLength(1);
+  expect(nodes.some((n) => n.textContent.includes("never ran out"))).toBe(false);
+  expect(legend.innerHTML).toContain("estimated ±30%");
+  expect(legend.innerHTML).toContain("leave-one-out error 29% RMS");
+  expect(legend.innerHTML).toContain("reconstructed");
+  // The pool: estimated (band and dash-dot) while b's share is, dotted once every share is reconstructed.
+  const run = {
+    points: [
+      [start, 200],
+      [start + DAY, 150],
+      [start + 2 * DAY, 100],
+      [start + 3 * DAY, 90],
+    ],
+    range: [
+      [200, 200],
+      [140, 160],
+      [100, 100],
+      [90, 90],
+    ],
+    estimated: [true, true, false, false],
+  };
+  const pool = draw(answerWith([hit, guess], [run]), "pool");
+  const kinds = pool
+    .filter((n) => ["estimated", "reconstructed", "band"].includes(n.attrs.class))
+    .map((n) => n.attrs.class);
+  expect(kinds).toEqual(["band", "estimated", "reconstructed"]);
 });

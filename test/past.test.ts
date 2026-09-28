@@ -187,7 +187,7 @@ test("a hit before the first reading holds 100 until that reading, not past it",
 });
 
 test("a week to 100% costs the windows that ran out's average, each counted once; an estimate caps at 100", () => {
-  const cost = new Float64Array(3 * W / H);
+  const cost = new Float64Array((3 * W) / H);
   cost.set([2, 2], 0); // a ran out at 2 h on $4
   cost.set([8], W / H); // a ran out again at W + 1 h on $8
   const hour = { from: 0, byAccount: new Map([["a", cost]]) };
@@ -263,7 +263,9 @@ test("a day before the readings burns what its curves rose; one with a gap is pa
       [today - 1.5 * D, 30],
     ]),
   ];
-  expect(withPast([{ start: today, burn: 4 }], guessed, ["a", "b"], readFrom, today + 5 * H)).toEqual(days);
+  expect(
+    withPast([{ start: today, burn: 4 }], guessed, ["a", "b"], readFrom, today + 5 * H),
+  ).toEqual(days);
   // A next window read to start half a second after the reset (huboten, 25 Sep) leaves no gap.
   const jitter = [
     curve("c", "hit", [

@@ -43,7 +43,7 @@ export function burndownNote(mode, answer) {
   const whose = mode === "pool" ? "the pool's, where every account has one," : "each";
   const per100 = answer.past.per100;
   const estimated =
-    per100 === null || per100 === undefined
+    per100 === null
       ? " A window that never ran out has no known end and is not drawn."
       : ` A window that never ran out is estimated (dash-dotted, in a band): its cost so far over what a week to 100% cost on average in the windows that did, each counted once (${Math.round(per100).toLocaleString("en")} weighted $), capped at 0% left; the band is ±${Math.round(answer.past.band * 100)}%, the leave-one-out error of that average being 29% RMS.${mode === "pool" ? " The pool's line is estimated wherever any account's share is, its band the sum of theirs." : ""}`;
   const rebuilt =

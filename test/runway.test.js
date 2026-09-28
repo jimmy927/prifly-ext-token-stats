@@ -46,7 +46,7 @@ test("the burn-down note says what each mode draws and when readings began", () 
     grid: { from: Date.UTC(2026, 8, 28, 1) },
     accounts: [{}, {}, {}, {}, {}],
     history: { from: now - 7 * 86_400_000, windows: [], unplaced: 0 },
-    past: { curves: [] },
+    past: { curves: [], per100: null, band: 0.3 },
   };
   expect(burndownNote("pool", answer)).toContain("at most 500%");
   expect(burndownNote("pool", answer)).toContain("refills to 100");
@@ -81,7 +81,7 @@ test("with weekly windows from the transcripts the header and note say the chart
       ],
       unplaced: 2,
     },
-    past: { curves: [] },
+    past: { curves: [], per100: null, band: 0.3 },
   };
   expect(burndownSpan(answer)).toBe(
     "Weekly % left, 8 min measured, 6 days ahead · weekly windows 7 days back",
@@ -92,7 +92,7 @@ test("with weekly windows from the transcripts the header and note say the chart
   expect(note).toContain("2 refusals in the last 7 days matched no account");
   expect(note).not.toContain("where the chart starts");
   // With a window reconstructed from its hit, the header and note say so and name the weighting.
-  const rebuilt = { ...answer, past: { curves: [{ email: "a@x.com" }] } };
+  const rebuilt = { ...answer, past: { curves: [{ email: "a@x.com" }], per100: null, band: 0.3 } };
   expect(burndownSpan(rebuilt)).toBe(
     "Weekly % left, 8 min measured, 6 days ahead · 7 days back, reconstructed from when accounts ran out",
   );
@@ -103,4 +103,27 @@ test("with weekly windows from the transcripts the header and note say the chart
   expect(burndownNote("accounts", rebuilt)).toContain("Opus 5.5 and Fable counted ×2");
   expect(burndownNote("pool", rebuilt)).toContain("where every account has one");
   expect(burndownNote("accounts", rebuilt)).not.toContain("none exists before the readings");
+  expect(burndownNote("accounts", rebuilt)).toContain("never ran out has no known end");
+  // With a window that never ran out estimated, the header, the note and its average say so.
+  const guessed = {
+    ...answer,
+    past: {
+      curves: [
+        { email: "a@x.com", anchor: "hit" },
+        { email: "a@x.com", anchor: "estimate" },
+      ],
+      per100: 2412.4,
+      band: 0.3,
+    },
+  };
+  expect(burndownSpan(guessed)).toBe(
+    "Weekly % left, 8 min measured, 6 days ahead · 7 days back, reconstructed from when accounts ran out, estimated where they never did",
+  );
+  const poolNote = burndownNote("pool", guessed);
+  expect(poolNote).toContain("each counted once (2,412 weighted $)");
+  expect(poolNote).toContain(
+    "the band is ±30%, the leave-one-out error of that average being 29% RMS",
+  );
+  expect(poolNote).toContain("its band the sum of theirs");
+  expect(burndownNote("accounts", guessed)).not.toContain("its band the sum of theirs");
 });

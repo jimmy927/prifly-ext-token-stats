@@ -17,7 +17,9 @@ function clip(points, from) {
 }
 
 const pathOf = (f, points) =>
-  points.map(([t, v], k) => `${k === 0 ? "M" : "L"}${f.x(t).toFixed(1)} ${f.y(v).toFixed(1)}`).join("");
+  points
+    .map(([t, v], k) => `${k === 0 ? "M" : "L"}${f.x(t).toFixed(1)} ${f.y(v).toFixed(1)}`)
+    .join("");
 
 /** The two strokes set apart from the measured (solid) and forecast (dashed 5 4) lines. */
 export const STYLES = {

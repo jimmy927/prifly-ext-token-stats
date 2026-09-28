@@ -67,7 +67,10 @@ export function ownerOf(hit: LimitHit, resets: ReadonlyMap<string, number | null
  * Each account's weekly windows that reach into the last `HISTORY`: the one
  * its latest reading is in, and each one a refusal names. None is inferred
  * from another by adding weeks: resets have moved (n49's from Sat 26 Sep
- * 08:00 to Thu 1 Oct 03:00 CET).
+ * 08:00 to Thu 1 Oct 03:00 CET). The one exception: when an account's
+ * earliest known window starts inside the last `HISTORY`, the window before
+ * it ended at that start, a known reset; it is added, with no refusal and
+ * its start a week before, so `past.ts` can estimate it.
  */
 export function limitHistory(
   hits: readonly LimitHit[],
@@ -97,6 +100,10 @@ export function limitHistory(
     w.hitAt = Math.min(w.hitAt ?? hit.ts, hit.ts);
     w.lastRefusalAt = Math.max(w.lastRefusalAt ?? hit.ts, hit.ts);
     w.refusals += 1;
+  }
+  for (const [email, own] of windows) {
+    const earliest = Math.min(...own.map((w) => w.start));
+    if (earliest > from && earliest < now) windowOf(email, earliest);
   }
   const shown = [...windows.values()].flatMap((own) =>
     own.filter((w) => w.end > from).sort((a, b) => a.start - b.start),

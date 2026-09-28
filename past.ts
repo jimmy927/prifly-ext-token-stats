@@ -152,6 +152,20 @@ export function estimate(
   };
 }
 
+/** A window that never ran out and holds no reading, estimated up to the readings or now. */
+function estimatedOf(
+  w: LimitWindow,
+  cost: HourlyCost,
+  first: Point | undefined,
+  per100: number | null,
+  now: number,
+): PastCurve | null {
+  const end = Math.min(w.end, first?.[0] ?? w.end, now);
+  if (per100 === null || end <= w.start) return null;
+  const guess = estimate(cost.byAccount.get(w.email), cost.from, w.start, end, per100);
+  return { email: w.email, start: w.start, end: w.end, anchor: "estimate", ...guess };
+}
+
 /**
  * One window's curve: to its hit and at 100% after it, to the first reading
  * in it, or before the readings estimated from its cost (`per100`).
@@ -166,11 +180,7 @@ function curveOf(
   const values = cost.byAccount.get(w.email);
   const read = first !== undefined && first[0] >= w.start && first[0] < w.end ? first : null;
   const base = { email: w.email, start: w.start, end: w.end };
-  if (w.hitAt === null && read === null) {
-    const end = Math.min(w.end, first?.[0] ?? w.end, now);
-    if (per100 === null || end <= w.start) return null;
-    return { ...base, anchor: "estimate", ...estimate(values, cost.from, w.start, end, per100) };
-  }
+  if (w.hitAt === null && read === null) return estimatedOf(w, cost, first, per100, now);
   if (values === undefined) return null;
   if (read !== null && (w.hitAt === null || read[0] < w.hitAt)) {
     const points = reconstruct(values, cost.from, w.start, read[0], read[1]);
@@ -209,7 +219,16 @@ function shareOn(
   const range: [number, number] | null =
     band === undefined
       ? null
-      : [along(band.map(([x, lo]) => [x, lo]), t), along(band.map(([x, , hi]) => [x, hi]), t)];
+      : [
+          along(
+            band.map(([x, lo]) => [x, lo]),
+            t,
+          ),
+          along(
+            band.map(([x, , hi]) => [x, hi]),
+            t,
+          ),
+        ];
   return { value: along(curve.points, t), range };
 }
 

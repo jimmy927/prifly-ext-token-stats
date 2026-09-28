@@ -50,15 +50,22 @@ the status line says when the accounts' limits were last read.
   dot on the empty line), shaped by that window's own cumulative cost with
   Opus 5.5 and Fable counted ×2 (fit on 15–27 Sep 2026: 2.2× and 1.9× Opus
   5), and stays at 0% until its reset; the window an account's first reading
-  is in falls the same way to that reading. Whole pool draws them only where
-  every account has one. A window that never ran out has no known end and
-  stays hatched.
+  is in falls the same way to that reading. A window that never ran out
+  (the one before an account's earliest known reset included) is estimated,
+  drawn dash-dotted: its % used is its weighted cost ÷ the average weighted
+  cost of a full week — the arithmetic mean over the windows that ran out,
+  each counted once — capped at 100, with a ±30% band (that average's
+  leave-one-out error is 29% RMS). Whole pool uses them where no
+  reconstructed curve exists, its band the sum of theirs and that stretch
+  marked estimated. Only where no transcript reaches does the chart stay
+  hatched.
 - **Accounts needed**: the pool's burn per day, in % of one account's weekly
   limit, against what the connected accounts refill (100% a week each). Days
   before the readings are reconstructed from the same per-window curves as
   the burn-down's dotted lines and drawn pale; a day where an account has no
   curve (a week that never ran out) is partial, outlined dashed, and its
-  hover card names the account. The average of the last 7 or 14 full days,
+  hover card names the account; the burn-down's estimate is not used here,
+  its ±30% would enter the sizing. The average of the last 7 or 14 full days,
   read or reconstructed, today and partial days left out, × 7 ÷ 100% is the
   burn in accounts' worth of weekly limit a week, and the card names the
   reconstructed days and the partial ones left out; with the headroom
