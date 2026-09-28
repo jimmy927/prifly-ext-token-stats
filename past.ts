@@ -12,11 +12,12 @@
  */
 
 import type { HourlyCost } from "./answer";
-import type { Point } from "./forecast";
+import { DAILY_DAYS, type DayBurn, type Point } from "./forecast";
 import type { LimitWindow } from "./history";
 import { familyOf } from "./prices";
 
 const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
 
 /**
  * How much faster a dollar of a model fills the weekly limit than a dollar of
@@ -108,14 +109,41 @@ function valueOn(curves: readonly PastCurve[], t: number, before: boolean): numb
   const edge = (c: PastCurve) =>
     (c.points[0] as Point)[0] <= t && t <= (c.points.at(-1) as Point)[0];
   const curve = curves.find(inside) ?? curves.find(edge);
-  if (curve === undefined) return null;
-  const p = curve.points;
+  return curve === undefined ? null : along(curve.points, t);
+}
+
+/** A curve's % at `t`, between its points; its last % past its end. */
+function along(p: readonly Point[], t: number): number {
   for (let k = 0; k < p.length - 1; k++) {
     const [x0, y0] = p[k] as Point;
     const [x1, y1] = p[k + 1] as Point;
     if (t >= x0 && t <= x1) return x1 === x0 ? y1 : y0 + ((t - x0) / (x1 - x0)) * (y1 - y0);
   }
   return (p.at(-1) as Point)[1];
+}
+
+const startOf = (c: PastCurve) => (c.points[0] as Point)[0];
+const endOf = (c: PastCurve) => (c.points.at(-1) as Point)[0];
+
+/** What `curves` rose over [a, b]: each window from its own 0, so a reset adds and never subtracts. */
+function riseOver(curves: readonly PastCurve[], a: number, b: number): number {
+  let sum = 0;
+  for (const c of curves) {
+    const lo = Math.max(a, startOf(c));
+    const hi = Math.min(b, endOf(c));
+    if (hi > lo) sum += along(c.points, hi) - along(c.points, lo);
+  }
+  return sum;
+}
+
+/** Whether `curves` cover [a, b] with no gap. */
+function coverOver(curves: readonly PastCurve[], a: number, b: number): boolean {
+  let reached = a;
+  for (const c of [...curves].sort((x, y) => startOf(x) - startOf(y))) {
+    if (startOf(c) > reached) break;
+    reached = Math.max(reached, endOf(c));
+  }
+  return reached >= b;
 }
 
 /** 100 − each account's %, summed; null when any account has none there. */
@@ -189,4 +217,54 @@ export function reconstructPast(
       pool: hours.map((t) => poolAt(byAccount, t, false)),
     },
   };
+}
+
+/**
+ * One local day of pool burn, in % of one account's weekly limit: measured
+ * from the readings, and before each account's first reading reconstructed
+ * from its curves — the same curves the burn-down draws dotted.
+ */
+export type PoolDay = DayBurn & {
+  /** The part of `burn` reconstructed from the transcripts. */
+  reconstructed: number;
+  /**
+   * Accounts with no curve over part of the day before their first reading
+   * (a window that never hit its limit): `burn` leaves their share of that
+   * stretch out, so the day is partial.
+   */
+  missing: string[];
+};
+
+/**
+ * The measured days, oldest first and today last, with the days before the
+ * readings added back to the first a curve reaches (at most 14 in all), and
+ * each day's stretch before an account's first reading (`readFrom`) filled
+ * from that account's curves.
+ */
+export function withPast(
+  measured: readonly DayBurn[],
+  curves: readonly PastCurve[],
+  emails: readonly string[],
+  readFrom: ReadonlyMap<string, number>,
+  now: number,
+): PoolDay[] {
+  const today = measured.at(-1)?.start;
+  if (today === undefined) return [];
+  const earliest = Math.min((measured[0] as DayBurn).start, ...curves.map(startOf));
+  const back = Math.min(DAILY_DAYS - 1, Math.ceil((today - earliest) / DAY));
+  const burns = new Map(measured.map((d) => [d.start, d.burn]));
+  const days: PoolDay[] = [];
+  for (let start = today - back * DAY; start <= today; start += DAY) {
+    const day: PoolDay = { start, burn: burns.get(start) ?? 0, reconstructed: 0, missing: [] };
+    for (const email of emails) {
+      const b = Math.min(start + DAY, now, readFrom.get(email) ?? now);
+      if (b <= start) continue;
+      const own = curves.filter((c) => c.email === email);
+      day.reconstructed += riseOver(own, start, b);
+      if (!coverOver(own, start, b)) day.missing.push(email);
+    }
+    day.burn += day.reconstructed;
+    days.push(day);
+  }
+  return days;
 }

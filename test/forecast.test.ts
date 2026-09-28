@@ -165,7 +165,7 @@ test("the pool counts what each account has left, an account with no rate held",
     wk(0, 42, reset),
     wk(0, 30, null, "b@x.com"),
   ];
-  const answer = forecast(readings, [meta("a@x.com"), meta("b@x.com"), meta("c@x.com")], NOW, CET);
+  const answer = forecast(readings, [meta("a@x.com"), meta("b@x.com"), meta("c@x.com")], NOW);
   const [a, b, c] = answer.accounts;
   expect(a?.weekly?.ratePerHour).toBe(1);
   expect(a?.forecast.length).toBeGreaterThan(0);
@@ -196,7 +196,7 @@ test("the pool counts what each account has left, an account with no rate held",
   // At its first hour only a has been read (b from half an hour ago).
   expect(answer.grid.pool[0]).toBe(60);
   // Readings older than 3 days: it starts 3 days back.
-  const older = forecast([wk(-100, 5, reset), ...readings], [meta("a@x.com")], NOW, CET);
+  const older = forecast([wk(-100, 5, reset), ...readings], [meta("a@x.com")], NOW);
   expect(older.grid.from).toBe(NOW - 3 * DAY);
   expect(b?.hourly[k + 10]).toBe(30);
   expect(c?.hourly.every((v) => v === null)).toBe(true);

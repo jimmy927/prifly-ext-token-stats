@@ -16,9 +16,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Answerer, readParams } from "./answer";
 import { applyScan } from "./archive";
-import { type ForecastAnswer, forecast } from "./forecast";
+import { dailyBurn, type ForecastAnswer, forecast } from "./forecast";
 import { limitHistory } from "./history";
-import { limitWeight, reconstructPast } from "./past";
+import { limitWeight, reconstructPast, withPast } from "./past";
 import type { ExtensionApi, PanelRequest } from "./prifly-api";
 import { Readings } from "./readings";
 import { RemoteSessions } from "./remote";
@@ -103,7 +103,8 @@ function forecastAnswer(state: Running, query: Record<string, string>): Forecast
   const now = Date.now();
   const tz = Number(query["tz"] ?? 0);
   const minutes = Number.isFinite(tz) ? tz : 0;
-  const found = forecast(state.readings.all(), state.readings.accounts, now, minutes * 60_000);
+  const readings = state.readings.all();
+  const found = forecast(readings, state.readings.accounts, now);
   const hits = [...state.local.values(), ...state.archived.values()].flatMap((f) => f.hits ?? []);
   const resets = found.accounts.map((a) => ({
     email: a.email,
@@ -118,20 +119,28 @@ function forecastAnswer(state: Running, query: Record<string, string>): Forecast
   );
   const oldest = Math.min(history.from, ...history.windows.map((w) => w.start));
   const cost = answerer(state).hourlyCost(oldest, now, limitWeight);
+  const past = reconstructPast(
+    history.windows,
+    cost,
+    firsts,
+    emails,
+    history.from,
+    found.grid.from,
+    now,
+  );
+  // Each account's first weekly reading: its days are reconstructed before it, measured after.
+  const readFrom = new Map<string, number>();
+  for (const r of readings) {
+    if (r.label === "7d" && !readFrom.has(r.email)) readFrom.set(r.email, r.at);
+  }
+  const measured = dailyBurn(readings, now, minutes * 60_000);
   return {
     supported: state.accounts !== null,
     newestAt: state.readings.newestAt,
     ...found,
+    daily: withPast(measured, past.curves, emails, readFrom, now),
     history,
-    past: reconstructPast(
-      history.windows,
-      cost,
-      firsts,
-      emails,
-      history.from,
-      found.grid.from,
-      now,
-    ),
+    past,
   };
 }
 

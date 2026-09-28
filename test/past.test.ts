@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { Answerer } from "../answer";
 import type { LimitWindow } from "../history";
 import type { Usage } from "../parse";
-import { limitWeight, reconstruct, reconstructPast } from "../past";
+import { limitWeight, type PastCurve, reconstruct, reconstructPast, withPast } from "../past";
 import { buildColumns } from "../store";
 
 const H = 3_600_000;
@@ -155,4 +155,61 @@ test("a hit before the first reading holds 100 until that reading, not past it",
       [5 * H, 0],
     ],
   ]);
+});
+
+test("a day before the readings burns what its curves rose; one with a gap is partial", () => {
+  const D = 24 * H;
+  const today = 10 * D;
+  const curve = (
+    email: string,
+    anchor: "hit" | "reading",
+    points: [number, number][],
+  ): PastCurve => ({
+    email,
+    start: (points[0] as [number, number])[0],
+    end: (points.at(-1) as [number, number])[0],
+    anchor,
+    points,
+  });
+  const curves = [
+    // a: a window that hit 100% a day ago, held there to its reset; then one to its first reading.
+    curve("a", "hit", [
+      [today - 3 * D, 0],
+      [today - D, 100],
+      [today - D / 2, 100],
+    ]),
+    curve("a", "reading", [
+      [today - D / 2, 0],
+      [today + 3 * H, 30],
+    ]),
+    // b: nothing before noon two days back, a window that never hit.
+    curve("b", "reading", [
+      [today - 1.5 * D, 0],
+      [today - D, 20],
+      [today, 40],
+      [today + 3 * H, 46],
+    ]),
+  ];
+  const readFrom = new Map([
+    ["a", today + 3 * H],
+    ["b", today + 3 * H],
+  ]);
+  const days = withPast([{ start: today, burn: 4 }], curves, ["a", "b"], readFrom, today + 5 * H);
+  expect(days.map((d) => d.start)).toEqual([today - 3 * D, today - 2 * D, today - D, today]);
+  expect(days.map((d) => d.missing)).toEqual([["b"], ["b"], [], []]);
+  const round = (v: number) => Math.round(v * 1e9) / 1e9;
+  // The reset adds a's new window from 0 (24 by midnight), never the fall from 100.
+  expect(days.map((d) => round(d.reconstructed))).toEqual([50, 70, 44, 12]);
+  // Today: 3 h of it reconstructed, then what the readings measured.
+  expect(days.map((d) => round(d.burn))).toEqual([50, 70, 44, 16]);
+  // No curves: the measured days' burn as it is, the hours before a's reading a gap; no readings: no days.
+  const two = [
+    { start: today - D, burn: 5 },
+    { start: today, burn: 1 },
+  ];
+  expect(withPast(two, [], ["a"], readFrom, today + 5 * H)).toEqual([
+    { start: today - D, burn: 5, reconstructed: 0, missing: ["a"] },
+    { start: today, burn: 1, reconstructed: 0, missing: ["a"] },
+  ]);
+  expect(withPast([], curves, ["a"], readFrom, today)).toEqual([]);
 });

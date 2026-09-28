@@ -259,6 +259,23 @@ svg .now {
 svg text.now-label {
   fill: var(--fg);
 }
+svg .day-read {
+  fill: var(--s0);
+}
+svg .day-rebuilt {
+  fill: var(--s0);
+  fill-opacity: 0.4;
+}
+svg .day-partial {
+  fill: var(--s0);
+  fill-opacity: 0.15;
+  stroke: var(--s0);
+  stroke-dasharray: 3 2;
+}
+svg .day-today {
+  fill: url(#fc-today);
+  stroke: var(--s0);
+}
 svg .avg {
   stroke: var(--fg);
   stroke-width: 1.5;

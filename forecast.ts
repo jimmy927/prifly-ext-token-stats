@@ -12,7 +12,7 @@
  */
 
 import type { LimitHistory } from "./history";
-import type { PastLines } from "./past";
+import type { PastLines, PoolDay } from "./past";
 import { floorTo } from "./query";
 import type { AccountMeta, Reading, Window } from "./readings";
 
@@ -98,8 +98,8 @@ export type ForecastAnswer = {
   /** When the oldest reading kept was taken, null before the first. */
   firstAt: number | null;
   accounts: AccountForecast[];
-  /** Oldest first; the last is today, so far. */
-  daily: DayBurn[];
+  /** Oldest first; the last is today, so far. Days before the readings are reconstructed. */
+  daily: PoolDay[];
   /**
    * Hour by hour from the hour of the first reading, at most 3 days back, to
    * 6 days ahead: what the pool has left, the sum of 100 − percent.
@@ -350,8 +350,7 @@ export function forecast(
   readings: readonly Reading[],
   accounts: readonly AccountMeta[],
   now: number,
-  tzMs: number,
-): Omit<ForecastAnswer, "supported" | "newestAt" | "history" | "past"> {
+): Omit<ForecastAnswer, "supported" | "newestAt" | "history" | "past" | "daily"> {
   // The chart starts at the first reading when that is less than 3 days back: no empty days drawn as measured.
   const from = Math.floor(Math.max(now - MEASURED, readings[0]?.at ?? now) / HOUR) * HOUR;
   const grid: number[] = [];
@@ -373,7 +372,6 @@ export function forecast(
   return {
     now,
     accounts: lines,
-    daily: dailyBurn(readings, now, tzMs),
     grid: { from, step: HOUR, pool },
     pool: { measured: poolMeasured(read, now), forecast: poolForecast(holdings, now + AHEAD) },
     firstAt: readings[0]?.at ?? null,
