@@ -184,7 +184,11 @@ counted once, by its message id.
   `cache/local.sqlite`, keeps the results across host restarts. A scan
   writes only what it read to it — each grown file's new calls — not the
   whole cache. It replaced `cache/local.json`, which is read once into a new
-  `local.sqlite` and then no longer used; it can be deleted.
+  `local.sqlite` and then no longer used; it can be deleted. Which files
+  might have grown comes from watching the folder (inotify): a scan stats
+  only those, and lists and stats every transcript on the first scan, every
+  ten minutes, and whenever the watch is down, so a change the watch missed
+  is at most ten minutes late. The log's `missed` counts such changes.
 - **History is kept for good.** Claude Code deletes transcripts older than
   `cleanupPeriodDays` (30 by default). When a transcript goes, what was read
   from it moves to `cache/archive.json` in the extension's folder and keeps
