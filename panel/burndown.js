@@ -1,17 +1,18 @@
-// The Forecast view's burn-down: each account's weekly percent, three days
+// The Forecast view's burn-down: the % of its weekly limit each account has
+// left — 100 at its reset, falling to 0 where it runs out — three days
 // measured and six days forecast at its 24 h burn, or what the whole pool
-// has left; under it, each account's weekly windows and the minutes it hit
-// its limit, 7 days back (`history.ts`), and before the readings each
-// window's % reconstructed between its reset and its hit (`past.ts`). The
-// numbers come from `forecast.ts`; this only draws them.
+// has left; under it, each account's weekly windows and the minutes it ran
+// out, 7 days back (`history.ts`), and before the readings each window's %
+// reconstructed between its reset and its hit (`past.ts`). The numbers
+// come from `forecast.ts` as % used; this turns them into % left and draws
+// them.
 
+import { reachesBack } from "./burndown-words.js";
 import { el } from "./chart.js";
 import { clockName, dayName, esc } from "./format.js";
 import { hideTip, showTip } from "./tip.js";
 
 const M = { l: 56, r: 12, t: 16, b: 22 };
-const HOUR = 3_600_000;
-const DAY = 24 * HOUR;
 const pct = (v) => `${Math.round(v)}%`;
 
 /** The accounts the legend has hidden, and "accounts" or "pool" as last drawn. */
@@ -28,9 +29,6 @@ function midnights(from, to) {
 
 /** Height of one account's lane of weekly windows, under the axis. */
 const LANE = 9;
-
-/** Whether the chart reaches back for weekly windows: only when the transcripts named any. */
-const reachesBack = (answer) => answer.history.windows.length > 0;
 
 function frame(host, answer) {
   const width = Math.max(host.clientWidth, 300);
@@ -53,7 +51,7 @@ const when = (t) => `${dayName(t)} ${clockName(t)} CET`;
 /**
  * Under the axis, one lane per account: its weekly windows from the
  * transcripts and its latest reading, a tick at each reset and a dot at the
- * minute it hit 100%, each with its own hover card.
+ * minute it ran out, each with its own hover card.
  */
 function drawLanes(svg, f, answer, colours) {
   if (f.lanes === 0) return;
@@ -84,7 +82,7 @@ function drawLanes(svg, f, answer, colours) {
             { label: "Began", value: w.start, colour },
             { label: "Resets", value: w.end, colour },
           ],
-          ["Hit 100%", w.hitAt === null ? "no refusal in the transcripts" : when(w.hitAt)],
+          ["Ran out", w.hitAt === null ? "no refusal in the transcripts" : when(w.hitAt)],
           when,
         ),
       );
@@ -105,7 +103,7 @@ function drawLanes(svg, f, answer, colours) {
       dot.addEventListener("mousemove", (event) =>
         showTip(
           event,
-          `${a.label} hit its weekly limit`,
+          `${a.label} ran out: 0% of its weekly limit left`,
           [{ label: "At", value: w.hitAt, colour }],
           ["Refused calls", `${w.refusals}, last ${when(w.lastRefusalAt)}`],
           when,
@@ -199,7 +197,7 @@ function hatchLabel(svg, f, answer, stretches) {
   el("text", { ...label, y: M.t + f.plotH / 2 + 12 }, svg).textContent =
     b === until
       ? `readings began ${dayName(until)} ${clockName(until)}`
-      : "no limit hit to draw from";
+      : "never ran out: nothing to draw from";
 }
 
 function axes(svg, f, answer) {
@@ -313,27 +311,46 @@ function drawPool(svg, f, answer, colours) {
   };
 }
 
+/** An account's weekly % used as the % it has left. */
+export const left = (points) => points.map(([t, v]) => [t, 100 - v]);
+
+/** A dot where a reconstructed window ran out, at 0% left, with its own hover card. */
+function ranOut(svg, f, c, a, colour) {
+  if (c.anchor !== "hit") return;
+  const at = c.points.find(([, v]) => v >= 100)[0];
+  if (at < f.from) return;
+  const dot = el("circle", { cx: f.x(at), cy: f.y(0), r: 3.5, fill: colour, class: "hit" }, svg);
+  dot.addEventListener("mousemove", (event) =>
+    showTip(event, `${a.label} ran out`, [{ label: "At", value: at, colour }], false, when),
+  );
+  dot.addEventListener("mouseleave", hideTip);
+}
+
 function drawAccounts(svg, f, answer, colours) {
-  limit(svg, f, 100, "limit");
+  limit(svg, f, 0, "empty");
   const shown = answer.accounts
     .map((a, i) => ({ a, colour: colours[i] }))
     .filter(({ a }) => !view.hidden.has(a.email));
+  const curvesOf = (a) => answer.past.curves.filter((c) => c.email === a.email);
   for (const { a, colour } of shown) {
-    for (const c of answer.past.curves.filter((c) => c.email === a.email))
-      reconstructed(svg, f, c.points, colour);
+    for (const c of curvesOf(a)) reconstructed(svg, f, left(c.points), colour);
   }
   for (const { a, colour } of shown) {
-    line(svg, f, a.forecast, colour, true);
-    line(svg, f, a.measured, colour, false);
+    line(svg, f, left(a.forecast), colour, true);
+    line(svg, f, left(a.measured), colour, false);
   }
   // Dots over every line, the first account's largest: accounts read at the same % and minute show as rings.
   shown.forEach(({ a, colour }, k) => {
-    dots(svg, f, a.measured, colour, 3 + 1.5 * (shown.length - 1 - k));
+    dots(svg, f, left(a.measured), colour, 3 + 1.5 * (shown.length - 1 - k));
   });
+  for (const { a, colour } of shown) {
+    for (const c of curvesOf(a)) ranOut(svg, f, c, a, colour);
+  }
   return (percentOf) => ({
     rows: answer.accounts
       .map((a, i) => ({ label: a.label, value: percentOf(i), colour: colours[i], email: a.email }))
-      .filter((r) => r.value !== null && !view.hidden.has(r.email)),
+      .filter((r) => r.value !== null && !view.hidden.has(r.email))
+      .map((r) => ({ ...r, value: 100 - r.value })),
     total: false,
   });
 }
@@ -359,45 +376,6 @@ function nowLine(svg, f, answer) {
   ahead.textContent = "forecast at each account's burn";
   // Seven days of weekly windows push now right: the words go rather than being cut.
   if (f.x(now) + 124 + ahead.getComputedTextLength() > f.width) ahead.remove();
-}
-
-/** The chart's subtitle: how much of it is measured, from the first reading or 3 days back. */
-export function burndownSpan(answer) {
-  const ms = answer.now - Math.max(answer.firstAt ?? answer.now, answer.grid.from);
-  const span =
-    ms < HOUR
-      ? `${Math.round(ms / 60_000)} min`
-      : ms < 2 * DAY
-        ? `${Math.round(ms / HOUR)} h`
-        : `${Math.round(ms / DAY)} days`;
-  const back = !reachesBack(answer)
-    ? ""
-    : answer.past.curves.length > 0
-      ? " · 7 days back, reconstructed from limit hits"
-      : " · weekly windows 7 days back";
-  return `Weekly %, ${span} measured, 6 days ahead${back}`;
-}
-
-/** What the chart under it draws, in the mode on screen, and how far back the readings go. */
-export function burndownNote(mode, answer) {
-  const since =
-    answer.firstAt >= answer.grid.from
-      ? ` Readings began ${dayName(answer.firstAt)} ${clockName(answer.firstAt)} CET, where the ${reachesBack(answer) ? "% lines start" : "chart starts"}; while they span only minutes each is a dot, and accounts read at the same % and minute show as rings round one spot.`
-      : "";
-  const lines =
-    mode === "pool"
-      ? `What all ${answer.accounts.length} accounts have left together: the sum of 100 − each one's weekly %, so at most ${answer.accounts.length * 100}%. At an account's reset its share refills to 100 and it burns again at its rate; an account with no rate is held where it is.`
-      : "Each line climbs at that account's burn, stops at the 100% limit and drops to 0 at its weekly reset. An account with no rate has no forecast line.";
-  const unplaced = answer.history.unplaced;
-  const whose = mode === "pool" ? "the pool's, where every account has one," : "each";
-  const rebuilt =
-    answer.past.curves.length > 0
-      ? ` Before the readings the dotted lines are reconstructed, not read: ${whose} window that hit its limit rises from 0% at its reset to 100% at the hit as that window's own cost did, Opus 5.5 and Fable counted ×2 (the 15–27 Sep fit gave 2.2× and 1.9× Opus 5), and the window of an account's first reading rises the same way to that reading. The hatching is where no such line exists: a window with no hit has no known end, and prifly keeps only each account's latest reading.`
-      : " The hatching has no %: prifly keeps only each account's latest reading, so none exists before the readings.";
-  const past = reachesBack(answer)
-    ? ` Under the axis each account's lane shows its weekly windows (a tick at each reset) and a dot at the minute Claude Code first refused a call for its weekly limit, from the transcripts.${rebuilt}${unplaced > 0 ? ` ${unplaced} refusal${unplaced === 1 ? "" : "s"} in the last 7 days matched no account prifly holds.` : ""}`
-    : "";
-  return `${lines}${since}${past}`;
 }
 
 /** Crosshair and the shared hover card, hour by hour. */
@@ -491,7 +469,9 @@ export function drawBurndown(host, legendHost, answer, colours, mode) {
   const svg = el("svg", { width: f.width, height: f.height, role: "img" }, host);
   svg.setAttribute(
     "aria-label",
-    view.mode === "pool" ? "What the pool has left over time" : "Each account's weekly % over time",
+    view.mode === "pool"
+      ? "What the pool has left over time"
+      : "Each account's weekly % left over time",
   );
   axes(svg, f, answer);
   const rowsAt =

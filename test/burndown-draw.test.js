@@ -123,3 +123,41 @@ test("a reconstructed curve is drawn dotted and only uncovered stretches stay ha
   expect(hatched(both)).toHaveLength(1);
   expect(both.some((n) => n.textContent.startsWith("readings began"))).toBe(false);
 });
+
+test("each account burns down: % left from 100 at its reset to 0 where it ran out", () => {
+  const hit = now - 4 * DAY;
+  const curve = {
+    email: "a",
+    start: now - 6 * DAY,
+    end: now + DAY,
+    anchor: "hit",
+    points: [
+      [now - 6 * DAY, 0],
+      [hit, 100],
+      [FIRST, 100],
+    ],
+  };
+  const nodes = draw(answerWith([curve]));
+  // 320 high less the two lanes: the plot runs from y 16 (100% left) to 274 (0% left).
+  const y = (left) => 16 + 258 - (left / 100) * 258;
+  const limit = nodes.find((n) => n.attrs.class === "limit");
+  expect(Number(limit.attrs.y1)).toBeCloseTo(y(0), 6);
+  expect(nodes.find((n) => n.attrs.class === "limit-label halo").textContent).toBe("empty");
+  // The reconstructed curve starts full and ends empty.
+  const path = nodes.find((n) => n.attrs.class === "reconstructed").attrs.d;
+  expect(path.startsWith("M")).toBe(true);
+  const ys = [...path.matchAll(/[ML][\d.]+ ([\d.]+)/g)].map((m) => Number(m[1]));
+  expect(ys[0]).toBeCloseTo(y(100), 0);
+  expect(ys.at(-1)).toBeCloseTo(y(0), 0);
+  // The one reading at 60% used is a dot at 40% left.
+  const read = nodes.find((n) => n.tag === "circle" && n.attrs.fill === "red" && !n.attrs.class);
+  expect(Number(read.attrs.cy)).toBeCloseTo(y(40), 6);
+  // Where it ran out, a dot on the empty line.
+  const out = nodes.filter((n) => n.attrs.class === "hit" && Number(n.attrs.cy) === y(0));
+  expect(out).toHaveLength(1);
+  // The pool is already what is left: its reading of 80 sits at 80 of 200.
+  const pool = draw(answerWith([curve]), "pool");
+  const dot = pool.find((n) => n.tag === "circle" && n.attrs.fill === "var(--fg)");
+  expect(Number(dot.attrs.cy)).toBeCloseTo(16 + 258 - (80 / 200) * 258, 6);
+  expect(pool.find((n) => n.attrs.class === "limit-label halo").textContent).toBe("pool empty");
+});

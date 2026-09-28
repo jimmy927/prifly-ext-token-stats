@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { burndownNote, burndownSpan } from "../panel/burndown.js";
+import { burndownNote, burndownSpan } from "../panel/burndown-words.js";
 import { burnCell, runwayBanner } from "../panel/forecast.js";
 
 const w = (outcome, dryHours, ratePerHour, rateFrom) => ({
@@ -50,15 +50,18 @@ test("the burn-down note says what each mode draws and when readings began", () 
   };
   expect(burndownNote("pool", answer)).toContain("at most 500%");
   expect(burndownNote("pool", answer)).toContain("refills to 100");
-  expect(burndownNote("accounts", answer)).toContain("drops to 0 at its weekly reset");
+  expect(burndownNote("pool", answer)).toContain("the sum of each one's weekly % left");
+  expect(burndownNote("accounts", answer)).toContain(
+    "has left: 100% at its reset, falling at its burn, stopping at 0% (empty) and jumping back to 100% at its next reset",
+  );
   expect(burndownNote("accounts", answer)).toContain("Readings began");
-  expect(burndownSpan(answer)).toBe("Weekly %, 8 min measured, 6 days ahead");
+  expect(burndownSpan(answer)).toBe("Weekly % left, 8 min measured, 6 days ahead");
   // Readings from before the 3 days: the chart starts 3 days back and says so.
   const old = { ...answer, firstAt: now - 4 * 86_400_000, grid: { from: now - 3 * 86_400_000 } };
   expect(burndownNote("accounts", old)).not.toContain("Readings began");
-  expect(burndownSpan(old)).toBe("Weekly %, 3 days measured, 6 days ahead");
+  expect(burndownSpan(old)).toBe("Weekly % left, 3 days measured, 6 days ahead");
   expect(burndownSpan({ ...answer, firstAt: now - 5 * 3_600_000, grid: { from: 0 } })).toBe(
-    "Weekly %, 5 h measured, 6 days ahead",
+    "Weekly % left, 5 h measured, 6 days ahead",
   );
   expect(burndownNote("accounts", answer)).not.toContain("lane");
 });
@@ -81,7 +84,7 @@ test("with weekly windows from the transcripts the header and note say the chart
     past: { curves: [] },
   };
   expect(burndownSpan(answer)).toBe(
-    "Weekly %, 8 min measured, 6 days ahead · weekly windows 7 days back",
+    "Weekly % left, 8 min measured, 6 days ahead · weekly windows 7 days back",
   );
   const note = burndownNote("accounts", answer);
   expect(note).toContain("where the % lines start");
@@ -91,9 +94,12 @@ test("with weekly windows from the transcripts the header and note say the chart
   // With a window reconstructed from its hit, the header and note say so and name the weighting.
   const rebuilt = { ...answer, past: { curves: [{ email: "a@x.com" }] } };
   expect(burndownSpan(rebuilt)).toBe(
-    "Weekly %, 8 min measured, 6 days ahead · 7 days back, reconstructed from limit hits",
+    "Weekly % left, 8 min measured, 6 days ahead · 7 days back, reconstructed from when accounts ran out",
   );
   expect(burndownNote("accounts", rebuilt)).toContain("dotted lines are reconstructed");
+  expect(burndownNote("accounts", rebuilt)).toContain(
+    "falls from 100% left at its reset to 0% at the minute it ran out",
+  );
   expect(burndownNote("accounts", rebuilt)).toContain("Opus 5.5 and Fable counted ×2");
   expect(burndownNote("pool", rebuilt)).toContain("where every account has one");
   expect(burndownNote("accounts", rebuilt)).not.toContain("none exists before the readings");

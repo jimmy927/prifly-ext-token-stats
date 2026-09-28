@@ -2,7 +2,8 @@
 // burn-down (burndown.js), and how many accounts the pool's burn needs. The
 // numbers come from `forecast.ts` at `api/forecast`; this lays them out.
 
-import { burndownNote, burndownSpan, drawBurndown } from "./burndown.js";
+import { drawBurndown } from "./burndown.js";
+import { burndownNote, burndownSpan } from "./burndown-words.js";
 import { el } from "./chart.js";
 import { clockName, dayName, esc, niceMax } from "./format.js";
 import { hideTip, showTip } from "./tip.js";
@@ -148,8 +149,7 @@ function drawRunway() {
 
 // ---- Accounts needed ----
 
-const needed = () =>
-  accountsNeeded(answer.daily, choices.days, choices.headroom, answer.firstAt);
+const needed = () => accountsNeeded(answer.daily, choices.days, choices.headroom, answer.firstAt);
 
 /** Which of the averaged days are reconstructed, and which partial ones it leaves out. */
 export function averagedFrom(n) {
@@ -209,9 +209,14 @@ function dayRows(d) {
   const read = d.burn - d.reconstructed;
   if (d.start + DAY <= answer.firstAt)
     return [{ label: "Pool burn, reconstructed", value: d.burn, colour: "var(--s0)" }];
-  if (d.start >= answer.firstAt) return [{ label: "Pool burn", value: d.burn, colour: "var(--s0)" }];
+  if (d.start >= answer.firstAt)
+    return [{ label: "Pool burn", value: d.burn, colour: "var(--s0)" }];
   return [
-    { label: `Reconstructed, to ${clockName(answer.firstAt)}`, value: d.reconstructed, colour: "var(--s0)" },
+    {
+      label: `Reconstructed, to ${clockName(answer.firstAt)}`,
+      value: d.reconstructed,
+      colour: "var(--s0)",
+    },
     { label: "Read, after", value: read, colour: "var(--s0)" },
   ];
 }
