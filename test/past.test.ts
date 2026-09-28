@@ -2,7 +2,15 @@ import { expect, test } from "bun:test";
 import { Answerer } from "../answer";
 import type { LimitWindow } from "../history";
 import type { Usage } from "../parse";
-import { limitWeight, type PastCurve, reconstruct, reconstructPast, withPast } from "../past";
+import {
+  estimate,
+  limitWeight,
+  type PastCurve,
+  perFullWeek,
+  reconstruct,
+  reconstructPast,
+  withPast,
+} from "../past";
 import { buildColumns } from "../store";
 
 const H = 3_600_000;
@@ -72,11 +80,12 @@ const win = (email: string, start: number, hitAt: number | null): LimitWindow =>
   lastRefusalAt: hitAt,
 });
 
-test("hit windows run 0 → 100 at the hit, the first reading's window is calibrated to it, the rest stay undrawn", () => {
+test("hit windows run 0 → 100 at the hit, the first reading's window is calibrated to it, the rest are estimated", () => {
   const cost = new Float64Array(W / H + 4);
   cost.set([1, 1, 2], 0); // a's first window: $4 before its hit at 3 h
   cost.set([3, 1], W / H); // a's second window: $4 before its first reading at W + 2 h
   const costB = new Float64Array(W / H + 4);
+  costB.set([0, 2], 0); // b's first window never ran out: $2 of the $4 a week to 100% costs
   costB.set([5], W / H);
   const past = reconstructPast(
     [win("a", 0, 3 * H), win("a", W, null), win("b", 0, null), win("b", W, null)],
@@ -96,8 +105,10 @@ test("hit windows run 0 → 100 at the hit, the first reading's window is calibr
     W + 3 * H,
     W + 3 * H,
   );
-  const [hit, read, b] = past.curves;
-  expect(past.curves).toHaveLength(3);
+  const [hit, read, guess, b] = past.curves;
+  expect(past.curves).toHaveLength(4);
+  expect(past.per100).toBe(4);
+  expect(past.band).toBe(0.3);
   // Shaped by its own cost, 100 at the hit minute, held there until its reset.
   expect(hit?.anchor).toBe("hit");
   expect(hit?.points).toEqual([
@@ -113,20 +124,37 @@ test("hit windows run 0 → 100 at the hit, the first reading's window is calibr
     [W + H, 30],
     [W + 2 * H, 40],
   ]);
-  // b's first window had no hit and no reading: no curve, so it stays hatched.
-  expect(b?.email).toBe("b");
-  expect(b?.start).toBe(W);
-  // The pool only where both have a curve: from the reset at W to b's first reading.
-  expect(past.pool).toEqual([
-    [
-      [W, 200],
-      [W + H, 160],
-    ],
+  // b's first window had no hit and no reading: its cost over a's $4 to 100%, with a ±30% band, to its reset.
+  expect(guess?.anchor).toBe("estimate");
+  expect(guess?.points.slice(0, 3)).toEqual([
+    [0, 0],
+    [H, 0],
+    [2 * H, 50],
   ]);
+  expect(guess?.points.at(-1)).toEqual([W, 50]);
+  expect(guess?.band?.[2]).toEqual([2 * H, 35, 65]);
+  expect(b?.anchor).toBe("reading");
+  expect(b?.start).toBe(W);
+  // The pool from the first reset on, where both now have a curve, to b's first reading: estimated while b's share is.
+  expect(past.pool).toHaveLength(1);
+  const [run] = past.pool;
+  expect(run?.points.slice(0, 3)).toEqual([
+    [0, 200],
+    [H, 175],
+    [2 * H, 100],
+  ]);
+  expect(run?.range[2]).toEqual([85, 115]);
+  expect(run?.estimated.slice(0, 3)).toEqual([true, true, true]);
+  expect(run?.points.at(-1)).toEqual([W + H, 160]);
+  expect(run?.estimated.at(-1)).toBe(false);
   expect(past.hourly.byAccount[0]?.[2]).toBe(50);
-  expect(past.hourly.byAccount[1]?.[2]).toBeNull();
-  expect(past.hourly.pool[2]).toBeNull();
+  expect(past.hourly.byAccount[1]?.[2]).toBe(50);
+  expect(past.hourly.range[0]?.[2]).toBeNull();
+  expect(past.hourly.range[1]?.[2]).toEqual([35, 65]);
+  expect(past.hourly.pool[2]).toBe(100);
+  expect(past.hourly.poolRange[2]).toEqual([85, 115]);
   expect(past.hourly.pool[W / H]).toBe(200);
+  expect(past.hourly.poolRange[W / H]).toBeNull();
 });
 
 test("a hit before the first reading holds 100 until that reading, not past it", () => {
@@ -147,13 +175,38 @@ test("a hit before the first reading holds 100 until that reading, not past it",
     [2 * H, 100],
     [5 * H, 100],
   ]);
-  expect(past.pool).toEqual([
+  expect(past.pool.map((r) => r.points)).toEqual([
     [
       [0, 100],
       [H, 50],
       [2 * H, 0],
       [5 * H, 0],
     ],
+  ]);
+  expect(past.pool[0]?.estimated).toEqual([false, false, false, false]);
+});
+
+test("a week to 100% costs the windows that ran out's average, each counted once; an estimate caps at 100", () => {
+  const cost = new Float64Array(3 * W / H);
+  cost.set([2, 2], 0); // a ran out at 2 h on $4
+  cost.set([8], W / H); // a ran out again at W + 1 h on $8
+  const hour = { from: 0, byAccount: new Map([["a", cost]]) };
+  expect(perFullWeek([win("a", 0, 2 * H), win("a", W, W + H)], hour)).toBe(6);
+  expect(perFullWeek([win("a", 0, null)], hour)).toBeNull();
+  // $9 on a $6 week is 150%: drawn at 100, the band's ends capped too.
+  const spend = new Float64Array([3, 6]);
+  const guess = estimate(spend, 0, 0, 2 * H, 6);
+  expect(guess.points).toEqual([
+    [0, 0],
+    [H, 50],
+    [2 * H, 100],
+  ]);
+  expect(guess.band[1]).toEqual([H, 35, 65]);
+  expect(guess.band[2]).toEqual([2 * H, 100, 100]);
+  // No cost at all: 0% used, and a band of nothing.
+  expect(estimate(undefined, 0, 0, H, 6).points).toEqual([
+    [0, 0],
+    [H, 0],
   ]);
 });
 
@@ -162,7 +215,7 @@ test("a day before the readings burns what its curves rose; one with a gap is pa
   const today = 10 * D;
   const curve = (
     email: string,
-    anchor: "hit" | "reading",
+    anchor: PastCurve["anchor"],
     points: [number, number][],
   ): PastCurve => ({
     email,
@@ -202,6 +255,15 @@ test("a day before the readings burns what its curves rose; one with a gap is pa
   expect(days.map((d) => round(d.reconstructed))).toEqual([50, 70, 44, 12]);
   // Today: 3 h of it reconstructed, then what the readings measured.
   expect(days.map((d) => round(d.burn))).toEqual([50, 70, 44, 16]);
+  // An estimate for b's gap changes nothing: its ±30% stays out of the sizing, the days stay partial.
+  const guessed = [
+    ...curves,
+    curve("b", "estimate", [
+      [today - 3 * D, 0],
+      [today - 1.5 * D, 30],
+    ]),
+  ];
+  expect(withPast([{ start: today, burn: 4 }], guessed, ["a", "b"], readFrom, today + 5 * H)).toEqual(days);
   // A next window read to start half a second after the reset (huboten, 25 Sep) leaves no gap.
   const jitter = [
     curve("c", "hit", [

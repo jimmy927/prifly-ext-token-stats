@@ -7,8 +7,10 @@
  * from one window to another, because none holds (the cost to 100% ranged
  * $1,371 to $3,890 between the 8 windows of 15–27 Sep 2026).
  *
- * A window with no hit has one end only and is not drawn, except the one the
- * account's first reading is in: that reading is its other end.
+ * A window with no hit has one end only. The one the account's first reading
+ * is in takes that reading as its other end; any other is estimated: its
+ * cumulative weighted cost over what a week to 100% cost on average in the
+ * windows that ran out, capped at 100, with a ±`ESTIMATE_BAND` band.
  */
 
 import type { HourlyCost } from "./answer";
@@ -30,36 +32,63 @@ export function limitWeight(model: string): number {
   return family === "claude-opus-5-5" || family.startsWith("claude-fable-") ? 2 : 1;
 }
 
+/**
+ * An estimated window's % is off by this fraction either way: the
+ * leave-one-out error of a single cost-to-100% over the 8 windows of 15–27
+ * Sep 2026 was 29% RMS.
+ */
+export const ESTIMATE_BAND = 0.3;
+
+/** A % used at `t` with its low and high ends: [t, low, high]. */
+export type Band = [number, number, number];
+
 /** One account's reconstructed % over one weekly window. */
 export type PastCurve = {
   email: string;
   start: number;
   end: number;
-  /** What its far end is: the hit's 100%, or the first reading's %. */
-  anchor: "hit" | "reading";
+  /** What its far end is: the hit's 100%, the first reading's %, or none (estimated from the cost). */
+  anchor: "hit" | "reading" | "estimate";
   points: Point[];
+  /** An estimate's ±`ESTIMATE_BAND`, point for point. */
+  band?: Band[];
 };
+
+/** A stretch of the pool's past: % left, its low and high ends, and whether any account's share is estimated. */
+export type PoolRun = { points: Point[]; range: [number, number][]; estimated: boolean[] };
 
 export type PastLines = {
   curves: PastCurve[];
+  /** The average weighted cost of a week to 100% over the windows that ran out; null with none. */
+  per100: number | null;
+  band: number;
   /** What the pool had left, only where every account has a curve: one run per stretch. */
-  pool: Point[][];
-  /** Each account's % and the pool's at each hour from `from`, null where no curve reaches. */
-  hourly: { from: number; step: number; byAccount: (number | null)[][]; pool: (number | null)[] };
+  pool: PoolRun[];
+  /**
+   * Each account's % and the pool's at each hour from `from`, null where no
+   * curve reaches; `range` the % used's band where it is estimated, and
+   * `poolRange` the pool's % left where any share of it is.
+   */
+  hourly: {
+    from: number;
+    step: number;
+    byAccount: (number | null)[][];
+    range: ([number, number] | null)[][];
+    pool: (number | null)[];
+    poolRange: ([number, number] | null)[];
+  };
 };
 
 /**
- * The % from 0 at `start` to `endValue` at `end`, rising with the cost spent
- * so far: a point at `start`, each hour boundary between and `end`, an hour's
- * cost taken as spread evenly over it. null when nothing was spent.
+ * The weighted cost spent from `start` to `end`, running: at `start`, each
+ * hour boundary between and `end`, an hour's cost taken as spread evenly over it.
  */
-export function reconstruct(
+function spending(
   cost: Float64Array,
   from: number,
   start: number,
   end: number,
-  endValue: number,
-): Point[] | null {
+): { times: number[]; spent: number[] } {
   const times = [start];
   for (let t = Math.floor(start / HOUR) * HOUR + HOUR; t < end; t += HOUR) times.push(t);
   times.push(end);
@@ -70,37 +99,94 @@ export function reconstruct(
     const hour = cost[Math.floor((t0 - from) / HOUR)] ?? 0;
     spent.push((spent[k - 1] as number) + (hour * (t1 - t0)) / HOUR);
   }
+  return { times, spent };
+}
+
+/**
+ * The % from 0 at `start` to `endValue` at `end`, rising with the cost spent
+ * so far. null when nothing was spent.
+ */
+export function reconstruct(
+  cost: Float64Array,
+  from: number,
+  start: number,
+  end: number,
+  endValue: number,
+): Point[] | null {
+  const { times, spent } = spending(cost, from, start, end);
   const total = spent.at(-1) as number;
   if (!(total > 0)) return null;
   return times.map((t, k) => [t, (endValue * (spent[k] as number)) / total]);
 }
 
-/** One window's curve: to its hit and at 100% after it, or to the first reading in it. */
+/**
+ * The average weighted cost of a week to 100%: each window that ran out
+ * counts once, its cost from its reset to its hit; null with none.
+ */
+export function perFullWeek(windows: readonly LimitWindow[], cost: HourlyCost): number | null {
+  const costs = windows.flatMap((w) => {
+    const values = cost.byAccount.get(w.email);
+    if (w.hitAt === null || values === undefined) return [];
+    const total = spending(values, cost.from, w.start, w.hitAt).spent.at(-1) as number;
+    return total > 0 ? [total] : [];
+  });
+  return costs.length === 0 ? null : costs.reduce((s, c) => s + c, 0) / costs.length;
+}
+
+/** A window's % from its cost alone, `per100` to 100%, capped there, with its band. */
+export function estimate(
+  cost: Float64Array | undefined,
+  from: number,
+  start: number,
+  end: number,
+  per100: number,
+): { points: Point[]; band: Band[] } {
+  const { times, spent } = spending(cost ?? new Float64Array(0), from, start, end);
+  const raw = spent.map((s) => (100 * s) / per100);
+  return {
+    points: times.map((t, k) => [t, Math.min(100, raw[k] as number)]),
+    band: times.map((t, k) => {
+      const v = raw[k] as number;
+      return [t, Math.min(100, v * (1 - ESTIMATE_BAND)), Math.min(100, v * (1 + ESTIMATE_BAND))];
+    }),
+  };
+}
+
+/**
+ * One window's curve: to its hit and at 100% after it, to the first reading
+ * in it, or before the readings estimated from its cost (`per100`).
+ */
 function curveOf(
   w: LimitWindow,
   cost: HourlyCost,
   first: Point | undefined,
+  per100: number | null,
   now: number,
 ): PastCurve | null {
   const values = cost.byAccount.get(w.email);
-  if (values === undefined) return null;
   const read = first !== undefined && first[0] >= w.start && first[0] < w.end ? first : null;
   const base = { email: w.email, start: w.start, end: w.end };
+  if (w.hitAt === null && read === null) {
+    const end = Math.min(w.end, first?.[0] ?? w.end, now);
+    if (per100 === null || end <= w.start) return null;
+    return { ...base, anchor: "estimate", ...estimate(values, cost.from, w.start, end, per100) };
+  }
+  if (values === undefined) return null;
   if (read !== null && (w.hitAt === null || read[0] < w.hitAt)) {
     const points = reconstruct(values, cost.from, w.start, read[0], read[1]);
     return points === null ? null : { ...base, anchor: "reading", points };
   }
-  if (w.hitAt === null) return null;
-  const points = reconstruct(values, cost.from, w.start, w.hitAt, 100);
+  const hitAt = w.hitAt as number;
+  const points = reconstruct(values, cost.from, w.start, hitAt, 100);
   if (points === null) return null;
   // Refused from the hit on: 100% until the reset, or until the readings take over.
   const held = Math.min(w.end, read?.[0] ?? w.end, now);
-  if (held > w.hitAt) points.push([held, 100]);
+  if (held > hitAt) points.push([held, 100]);
   return { ...base, anchor: "hit", points };
 }
 
-/** An account's % at `t` from its curves; at a reset, `before` takes the window that ends there. */
-function valueOn(curves: readonly PastCurve[], t: number, before: boolean): number | null {
+/** The curve over `t`; at a reset, `before` takes the window that ends there. */
+function curveOn(curves: readonly PastCurve[], t: number, before: boolean): PastCurve | undefined {
   const inside = (c: PastCurve) => {
     const a = (c.points[0] as Point)[0];
     const b = (c.points.at(-1) as Point)[0];
@@ -108,8 +194,27 @@ function valueOn(curves: readonly PastCurve[], t: number, before: boolean): numb
   };
   const edge = (c: PastCurve) =>
     (c.points[0] as Point)[0] <= t && t <= (c.points.at(-1) as Point)[0];
-  const curve = curves.find(inside) ?? curves.find(edge);
-  return curve === undefined ? null : along(curve.points, t);
+  return curves.find(inside) ?? curves.find(edge);
+}
+
+/** An account's % at `t` from its curves, and its band there when estimated. */
+function shareOn(
+  curves: readonly PastCurve[],
+  t: number,
+  before: boolean,
+): { value: number; range: [number, number] | null } | null {
+  const curve = curveOn(curves, t, before);
+  if (curve === undefined) return null;
+  const band = curve.band;
+  const range: [number, number] | null =
+    band === undefined
+      ? null
+      : [along(band.map(([x, lo]) => [x, lo]), t), along(band.map(([x, , hi]) => [x, hi]), t)];
+  return { value: along(curve.points, t), range };
+}
+
+function valueOn(curves: readonly PastCurve[], t: number, before: boolean): number | null {
+  return shareOn(curves, t, before)?.value ?? null;
 }
 
 /** A curve's % at `t`, between its points; its last % past its end. */
@@ -150,45 +255,55 @@ function coverOver(curves: readonly PastCurve[], a: number, b: number): boolean 
   return reached >= b;
 }
 
-/** 100 − each account's %, summed; null when any account has none there. */
-function poolAt(byAccount: readonly PastCurve[][], t: number, before: boolean): number | null {
-  let sum = 0;
+/** The pool at one moment: % left, its low and high ends, and whether any share is estimated. */
+type PoolValue = { left: number; low: number; high: number; estimated: boolean };
+
+/** 100 − each account's %, summed, its band from the estimated shares; null when any account has none there. */
+function poolAt(byAccount: readonly PastCurve[][], t: number, before: boolean): PoolValue | null {
+  const out: PoolValue = { left: 0, low: 0, high: 0, estimated: false };
   for (const curves of byAccount) {
-    const v = valueOn(curves, t, before);
-    if (v === null) return null;
-    sum += 100 - v;
+    const share = shareOn(curves, t, before);
+    if (share === null) return null;
+    const [lo, hi] = share.range ?? [share.value, share.value];
+    out.left += 100 - share.value;
+    out.low += 100 - hi;
+    out.high += 100 - lo;
+    out.estimated ||= share.range !== null;
   }
-  return sum;
+  return out;
 }
 
-/** The pool's points at `t`: a vertical step where a reset changes it, the arriving side only on a run's start. */
-function poolStep(byAccount: readonly PastCurve[][], t: number, open: boolean): Point[] {
+/** The pool's values at `t`: a vertical step where a reset changes it, the arriving side only on a run's start. */
+function poolStep(byAccount: readonly PastCurve[][], t: number, open: boolean): PoolValue[] {
   const before = poolAt(byAccount, t, true);
   const after = poolAt(byAccount, t, false);
-  if (after === null) return before !== null && open ? [[t, before]] : [];
-  return before !== null && before !== after && open
-    ? [
-        [t, before],
-        [t, after],
-      ]
-    : [[t, after]];
+  if (after === null) return before !== null && open ? [before] : [];
+  return before !== null && before.left !== after.left && open ? [before, after] : [after];
 }
 
 /** The pool's line wherever every account has a curve, broken where any has none. */
-export function poolPast(byAccount: readonly PastCurve[][]): Point[][] {
+export function poolPast(byAccount: readonly PastCurve[][]): PoolRun[] {
   if (byAccount.length === 0) return [];
   const times = [...new Set(byAccount.flat().flatMap((c) => c.points.map(([t]) => t)))].sort(
     (a, b) => a - b,
   );
-  const runs: Point[][] = [[]];
+  const runs: PoolRun[] = [];
+  let run: PoolRun = { points: [], range: [], estimated: [] };
   let last: number | null = null;
   for (const t of times) {
-    if (last !== null && poolAt(byAccount, (last + t) / 2, false) === null) runs.push([]);
-    const run = runs.at(-1) as Point[];
-    run.push(...poolStep(byAccount, t, run.length > 0));
+    if (last !== null && poolAt(byAccount, (last + t) / 2, false) === null) {
+      runs.push(run);
+      run = { points: [], range: [], estimated: [] };
+    }
+    for (const p of poolStep(byAccount, t, run.points.length > 0)) {
+      run.points.push([t, p.left]);
+      run.range.push([p.low, p.high]);
+      run.estimated.push(p.estimated);
+    }
     last = t;
   }
-  return runs.filter((run) => run.length > 1);
+  runs.push(run);
+  return runs.filter((r) => r.points.length > 1);
 }
 
 /**
@@ -205,20 +320,26 @@ export function reconstructPast(
   until: number,
   now: number,
 ): PastLines {
+  const per100 = perFullWeek(windows, cost);
   const curves = windows
-    .map((w) => curveOf(w, cost, firsts.get(w.email), now))
+    .map((w) => curveOf(w, cost, firsts.get(w.email), per100, now))
     .filter((c): c is PastCurve => c !== null);
   const byAccount = emails.map((email) => curves.filter((c) => c.email === email));
   const hours: number[] = [];
   for (let t = from; t < until; t += HOUR) hours.push(t);
+  const pools = hours.map((t) => poolAt(byAccount, t, false));
   return {
     curves,
+    per100,
+    band: ESTIMATE_BAND,
     pool: poolPast(byAccount),
     hourly: {
       from,
       step: HOUR,
       byAccount: byAccount.map((own) => hours.map((t) => valueOn(own, t, false))),
-      pool: hours.map((t) => poolAt(byAccount, t, false)),
+      range: byAccount.map((own) => hours.map((t) => shareOn(own, t, false)?.range ?? null)),
+      pool: pools.map((p) => p?.left ?? null),
+      poolRange: pools.map((p) => (p?.estimated ? [p.low, p.high] : null)),
     },
   };
 }
@@ -232,9 +353,10 @@ export type PoolDay = DayBurn & {
   /** The part of `burn` reconstructed from the transcripts. */
   reconstructed: number;
   /**
-   * Accounts with no curve over part of the day before their first reading
-   * (a window that never hit its limit): `burn` leaves their share of that
-   * stretch out, so the day is partial.
+   * Accounts with no reconstructed curve over part of the day before their
+   * first reading (a window that never hit its limit: estimated on the
+   * burn-down at most): `burn` leaves their share of that stretch out, so the
+   * day is partial.
    */
   missing: string[];
 };
@@ -254,7 +376,9 @@ export function withPast(
 ): PoolDay[] {
   const today = measured.at(-1)?.start;
   if (today === undefined) return [];
-  const earliest = Math.min((measured[0] as DayBurn).start, ...curves.map(startOf));
+  // An estimate's ±30% stays off the sizing: its days are partial.
+  const known = curves.filter((c) => c.anchor !== "estimate");
+  const earliest = Math.min((measured[0] as DayBurn).start, ...known.map(startOf));
   const back = Math.min(DAILY_DAYS - 1, Math.ceil((today - earliest) / DAY));
   const burns = new Map(measured.map((d) => [d.start, d.burn]));
   const days: PoolDay[] = [];
@@ -263,7 +387,7 @@ export function withPast(
     for (const email of emails) {
       const b = Math.min(start + DAY, now, readFrom.get(email) ?? now);
       if (b <= start) continue;
-      const own = curves.filter((c) => c.email === email);
+      const own = known.filter((c) => c.email === email);
       day.reconstructed += riseOver(own, start, b);
       if (!coverOver(own, start, b)) day.missing.push(email);
     }

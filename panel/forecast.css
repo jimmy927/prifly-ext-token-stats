@@ -291,6 +291,11 @@ svg .future {
 svg .before {
   fill: url(#fc-before);
 }
+/* An estimated window's ±30%, behind its dash-dotted line. */
+svg .band {
+  fill-opacity: 0.12;
+  stroke: none;
+}
 svg text.before-label {
   fill: var(--muted-fg);
 }

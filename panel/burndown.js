@@ -3,10 +3,20 @@
 // measured and six days forecast at its 24 h burn, or what the whole pool
 // has left; under it, each account's weekly windows and the minutes it ran
 // out, 7 days back (`history.ts`), and before the readings each window's %
-// reconstructed between its reset and its hit (`past.ts`). The numbers
+// reconstructed between its reset and its hit, or estimated from its cost
+// where it never ran out (`past.ts`, drawn by `burndown-past.js`). The numbers
 // come from `forecast.ts` as % used; this turns them into % left and draws
 // them.
 
+import {
+  bandWords,
+  estimatedCurve,
+  hasEstimate,
+  left,
+  pastLine,
+  poolRun,
+  STYLES,
+} from "./burndown-past.js";
 import { reachesBack } from "./burndown-words.js";
 import { el } from "./chart.js";
 import { clockName, dayName, esc } from "./format.js";
@@ -118,7 +128,7 @@ function drawLanes(svg, f, answer, colours) {
 const drawn = (answer) =>
   answer.accounts.filter((a) => view.mode === "pool" || !view.hidden.has(a.email));
 
-/** Whether `a` has a reconstructed curve over `t`. */
+/** Whether `a` has a reconstructed or estimated curve over `t`. */
 const covers = (answer, a, t) =>
   answer.past.curves.some(
     (c) => c.email === a.email && c.points[0][0] <= t && t <= c.points.at(-1)[0],
@@ -134,7 +144,7 @@ function cutsOf(answer, from, until) {
 
 /**
  * The stretches before the first reading with no % to draw, as [start, end]:
- * where any drawn account has no reconstructed curve (for the pool, any
+ * where any drawn account has no curve, reconstructed or estimated (for the pool, any
  * account at all — it has a line only where every account has one).
  */
 export function unknownStretches(f, answer) {
@@ -197,7 +207,7 @@ function hatchLabel(svg, f, answer, stretches) {
   el("text", { ...label, y: M.t + f.plotH / 2 + 12 }, svg).textContent =
     b === until
       ? `readings began ${dayName(until)} ${clockName(until)}`
-      : "never ran out: nothing to draw from";
+      : "no weekly window in the transcripts";
 }
 
 function axes(svg, f, answer) {
@@ -235,37 +245,6 @@ function axes(svg, f, answer) {
   hatchLabel(svg, f, answer, stretches);
 }
 
-/** `points` from `from` on, the one crossing it cut there. */
-function clip(points, from) {
-  const k = points.findIndex(([t]) => t >= from);
-  if (k <= 0) return k === 0 ? points : [];
-  const [t0, v0] = points[k - 1];
-  const [t1, v1] = points[k];
-  return [[from, v0 + ((from - t0) / (t1 - t0)) * (v1 - v0)], ...points.slice(k)];
-}
-
-/** A reconstructed stretch: thin and dotted, set apart from the measured and forecast lines. */
-function reconstructed(svg, f, points, colour) {
-  const shown = clip(points, f.from);
-  if (shown.length < 2) return;
-  const d = shown
-    .map(([t, v], k) => `${k === 0 ? "M" : "L"}${f.x(t).toFixed(1)} ${f.y(v).toFixed(1)}`)
-    .join("");
-  el(
-    "path",
-    {
-      d,
-      fill: "none",
-      stroke: colour,
-      class: "reconstructed",
-      "stroke-width": 1.5,
-      "stroke-dasharray": "1 3",
-      "stroke-linecap": "round",
-    },
-    svg,
-  );
-}
-
 function line(svg, f, points, colour, dashed) {
   if (points.length < 2) return;
   const d = points
@@ -292,27 +271,34 @@ function limit(svg, f, value, words) {
   el("text", { ...label, class: "limit-label halo" }, svg).textContent = words;
 }
 
+/** An hour's row for account `i`: its % left, and where estimated the band's ends in its label. */
+function rowOf(a, i, hour, colours) {
+  const value = hour.percentOf(i);
+  if (value === null) return null;
+  const range = hour.rangeOf(i);
+  const label =
+    range === null ? a.label : `${a.label} · est. ${pct(100 - range[1])}–${pct(100 - range[0])}`;
+  return { label, value: 100 - value, colour: colours[i], email: a.email, estimated: range !== null };
+}
+
 /**
- * The pool's line — reconstructed where every account has a curve, measured
- * up to now, forecast after — and its hover rows, given each account's %.
+ * The pool's line — reconstructed or estimated where every account has a
+ * curve, measured up to now, forecast after — and its hover rows.
  */
 function drawPool(svg, f, answer, colours) {
   limit(svg, f, 0, "pool empty");
-  for (const run of answer.past.pool) reconstructed(svg, f, run, "var(--fg)");
+  for (const run of answer.past.pool) poolRun(svg, f, run, "var(--fg)");
   line(svg, f, answer.pool.forecast, "var(--fg)", true);
   line(svg, f, answer.pool.measured, "var(--fg)", false);
   dots(svg, f, answer.pool.measured, "var(--fg)");
-  return (percentOf) => {
-    const rows = answer.accounts
-      .map((a, i) => ({ label: a.label, value: percentOf(i), colour: colours[i] }))
-      .filter((r) => r.value !== null)
-      .map((r) => ({ ...r, value: 100 - r.value }));
-    return { rows, total: ["Pool left", pct(rows.reduce((s, r) => s + r.value, 0))] };
+  return (hour) => {
+    const rows = answer.accounts.map((a, i) => rowOf(a, i, hour, colours)).filter((r) => r !== null);
+    const sum = pct(rows.reduce((s, r) => s + r.value, 0));
+    const range = hour.poolRange;
+    const text = range === null ? sum : `${sum} (${pct(range[0])}–${pct(range[1])})`;
+    return { rows, total: ["Pool left", text] };
   };
 }
-
-/** An account's weekly % used as the % it has left. */
-export const left = (points) => points.map(([t, v]) => [t, 100 - v]);
 
 /** A dot where a reconstructed window ran out, at 0% left, with its own hover card. */
 function ranOut(svg, f, c, a, colour) {
@@ -333,7 +319,10 @@ function drawAccounts(svg, f, answer, colours) {
     .filter(({ a }) => !view.hidden.has(a.email));
   const curvesOf = (a) => answer.past.curves.filter((c) => c.email === a.email);
   for (const { a, colour } of shown) {
-    for (const c of curvesOf(a)) reconstructed(svg, f, left(c.points), colour);
+    for (const c of curvesOf(a)) {
+      if (c.anchor === "estimate") estimatedCurve(svg, f, c, colour);
+      else pastLine(svg, f, left(c.points), colour, "reconstructed");
+    }
   }
   for (const { a, colour } of shown) {
     line(svg, f, left(a.forecast), colour, true);
@@ -346,11 +335,10 @@ function drawAccounts(svg, f, answer, colours) {
   for (const { a, colour } of shown) {
     for (const c of curvesOf(a)) ranOut(svg, f, c, a, colour);
   }
-  return (percentOf) => ({
+  return (hour) => ({
     rows: answer.accounts
-      .map((a, i) => ({ label: a.label, value: percentOf(i), colour: colours[i], email: a.email }))
-      .filter((r) => r.value !== null && !view.hidden.has(r.email))
-      .map((r) => ({ ...r, value: 100 - r.value })),
+      .map((a, i) => rowOf(a, i, hour, colours))
+      .filter((r) => r !== null && !view.hidden.has(r.email)),
     total: false,
   });
 }
@@ -392,22 +380,35 @@ function hover(svg, f, answer, rowsAt) {
   );
   const { from, step, pool } = answer.grid;
   const past = answer.past.hourly;
-  /** The hour under `t`, its accounts' %, and whether they are reconstructed; null off both grids. */
+  /** The hour under `t`, its accounts' % and bands, and whether they are from the past; null off both grids. */
   const hourAt = (t) => {
     if (t >= from - step / 2) {
       const k = Math.min(pool.length - 1, Math.round((t - from) / step));
-      return { at: from + k * step, percentOf: (i) => answer.accounts[i].hourly[k], past: false };
+      const percentOf = (i) => answer.accounts[i].hourly[k];
+      return { at: from + k * step, percentOf, rangeOf: () => null, poolRange: null, past: false };
     }
     const k = Math.round((t - past.from) / past.step);
     if (k < 0 || k >= past.pool.length) return null;
-    // The pool has a reconstructed % only where every account has one.
+    // The pool has a past % only where every account has one.
     if (view.mode === "pool" && past.pool[k] === null) return null;
-    return { at: past.from + k * past.step, percentOf: (i) => past.byAccount[i][k], past: true };
+    return {
+      at: past.from + k * past.step,
+      percentOf: (i) => past.byAccount[i][k],
+      rangeOf: (i) => past.range[i][k],
+      poolRange: past.poolRange[k],
+      past: true,
+    };
+  };
+  /** What the hour's % are: an estimate's band shown anywhere makes it "estimated". */
+  const kindOf = (hour, rows) => {
+    if (!hour.past) return hour.at <= answer.now ? "measured" : "forecast";
+    const guessed = view.mode === "pool" ? hour.poolRange !== null : rows.some((r) => r.estimated);
+    return guessed ? bandWords(answer) : "reconstructed";
   };
   layer.addEventListener("mousemove", (event) => {
     const t = f.from + ((event.offsetX - M.l) / f.plotW) * (f.to - f.from);
     const hour = hourAt(t);
-    const { rows, total } = hour === null ? { rows: [], total: false } : rowsAt(hour.percentOf);
+    const { rows, total } = hour === null ? { rows: [], total: false } : rowsAt(hour);
     // An hour with no % known, reconstructed or read, has nothing to show, not a 0.
     if (rows.length === 0) {
       cross.setAttribute("visibility", "hidden");
@@ -418,8 +419,7 @@ function hover(svg, f, answer, rowsAt) {
     cross.setAttribute("x1", f.x(at));
     cross.setAttribute("x2", f.x(at));
     cross.setAttribute("visibility", "visible");
-    const kind = hour.past ? "reconstructed" : at <= answer.now ? "measured" : "forecast";
-    const title = `${dayName(at)} ${clockName(at)} CET · ${kind}`;
+    const title = `${dayName(at)} ${clockName(at)} CET · ${kindOf(hour, rows)}`;
     showTip(event, title, rows, total, pct);
   });
   layer.addEventListener("mouseleave", () => {
@@ -440,12 +440,18 @@ function drawLegend(host, answer, colours, redraw) {
         .join("");
   const key = (attrs) =>
     `<svg width="24" height="6"><line x1="0" x2="24" y1="3" y2="3" stroke="var(--muted-fg)" ${attrs}/></svg>`;
-  const rebuilt =
-    answer.past.curves.length > 0
-      ? `<span class="key">${key('stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"')}reconstructed</span>`
-      : "";
+  const attrs = (kind) =>
+    Object.entries(STYLES[kind])
+      .map(([k, v]) => `${k}="${v}"`)
+      .join(" ");
+  const rebuilt = answer.past.curves.some((c) => c.anchor !== "estimate")
+    ? `<span class="key">${key(attrs("reconstructed"))}reconstructed</span>`
+    : "";
+  const guessed = hasEstimate(answer)
+    ? `<span class="key" title="${esc(bandWords(answer))}">${key(attrs("estimated"))}estimated ±${Math.round(answer.past.band * 100)}%</span>`
+    : "";
   host.innerHTML = `<div class="legend">${accounts}</div><span class="grow"></span>
-    ${rebuilt}<span class="key">${key('stroke-width="2"')}measured</span><span class="key">${key('stroke-width="2" stroke-dasharray="5 4"')}forecast</span>`;
+    ${rebuilt}${guessed}<span class="key">${key('stroke-width="2"')}measured</span><span class="key">${key('stroke-width="2" stroke-dasharray="5 4"')}forecast</span>`;
   for (const button of host.querySelectorAll("button[data-k]")) {
     button.addEventListener("click", () => {
       const k = button.dataset.k;

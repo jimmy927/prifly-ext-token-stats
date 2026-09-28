@@ -18,10 +18,13 @@ export function burndownSpan(answer) {
       : ms < 2 * DAY
         ? `${Math.round(ms / HOUR)} h`
         : `${Math.round(ms / DAY)} days`;
+  const guessed = answer.past.curves.some((c) => c.anchor === "estimate")
+    ? ", estimated where they never did"
+    : "";
   const back = !reachesBack(answer)
     ? ""
     : answer.past.curves.length > 0
-      ? " · 7 days back, reconstructed from when accounts ran out"
+      ? ` · 7 days back, reconstructed from when accounts ran out${guessed}`
       : " · weekly windows 7 days back";
   return `Weekly % left, ${span} measured, 6 days ahead${back}`;
 }
@@ -38,9 +41,14 @@ export function burndownNote(mode, answer) {
       : "Each line is the % of its weekly limit that account has left: 100% at its reset, falling at its burn, stopping at 0% (empty) and jumping back to 100% at its next reset. An account with no rate has no forecast line.";
   const unplaced = answer.history.unplaced;
   const whose = mode === "pool" ? "the pool's, where every account has one," : "each";
+  const per100 = answer.past.per100;
+  const estimated =
+    per100 === null || per100 === undefined
+      ? " A window that never ran out has no known end and is not drawn."
+      : ` A window that never ran out is estimated (dash-dotted, in a band): its cost so far over what a week to 100% cost on average in the windows that did, each counted once (${Math.round(per100).toLocaleString("en")} weighted $), capped at 0% left; the band is ±${Math.round(answer.past.band * 100)}%, the leave-one-out error of that average being 29% RMS.${mode === "pool" ? " The pool's line is estimated wherever any account's share is, its band the sum of theirs." : ""}`;
   const rebuilt =
     answer.past.curves.length > 0
-      ? ` Before the readings the dotted lines are reconstructed, not read: ${whose} window that ran out falls from 100% left at its reset to 0% at the minute it ran out (a dot) as that window's own cost was spent, Opus 5.5 and Fable counted ×2 (the 15–27 Sep fit gave 2.2× and 1.9× Opus 5), and the window of an account's first reading falls the same way to that reading. The hatching is where no such line exists: a window that never ran out has no known end, and prifly keeps only each account's latest reading.`
+      ? ` Before the readings the dotted lines are reconstructed, not read: ${whose} window that ran out falls from 100% left at its reset to 0% at the minute it ran out (a dot) as that window's own cost was spent, Opus 5.5 and Fable counted ×2 (the 15–27 Sep fit gave 2.2× and 1.9× Opus 5), and the window of an account's first reading falls the same way to that reading.${estimated} The hatching is where no line exists: no weekly window reaches there, and prifly keeps only each account's latest reading.`
       : " The hatching has no %: prifly keeps only each account's latest reading, so none exists before the readings.";
   const past = reachesBack(answer)
     ? ` Under the axis each account's lane shows its weekly windows (a tick at each reset) and a dot at the minute it ran out — Claude Code's first refused call for its weekly limit — from the transcripts.${rebuilt}${unplaced > 0 ? ` ${unplaced} refusal${unplaced === 1 ? "" : "s"} in the last 7 days matched no account prifly holds.` : ""}`
