@@ -135,16 +135,19 @@ body[data-view="forecast"] .timed {
   opacity: 0.7;
   border-style: dashed;
 }
-/* Tint, edge and divider live on every cell, so the row reads as one band across the table. */
+/* A free-reset row: tinted cells and a purple left edge. Every row's first cell keeps a 3px
+   left border (transparent unless free) so rows line up; dividers stay the table's grey. */
+.fc-table tr > :first-child {
+  border-left: 3px solid transparent;
+}
 .fc-table tr.fr-row td {
   background: color-mix(in srgb, var(--free) 4%, transparent);
-  border-bottom-color: color-mix(in srgb, var(--free) 30%, var(--grid));
 }
 .fc-table tr.fr-row:hover td {
   background: var(--accent);
 }
 .fc-table tr.fr-row td:first-child {
-  box-shadow: inset 3px 0 0 var(--free);
+  border-left-color: var(--free);
 }
 .fr-covers {
   display: inline-block;
