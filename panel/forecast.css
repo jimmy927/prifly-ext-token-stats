@@ -140,6 +140,9 @@ body[data-view="forecast"] .timed {
   background: color-mix(in srgb, var(--free) 4%, transparent);
   border-bottom-color: color-mix(in srgb, var(--free) 30%, var(--grid));
 }
+.fc-table tr.fr-row:hover td {
+  background: var(--accent);
+}
 .fc-table tr.fr-row td:first-child {
   box-shadow: inset 3px 0 0 var(--free);
 }
