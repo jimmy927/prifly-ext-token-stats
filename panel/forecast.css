@@ -135,8 +135,10 @@ body[data-view="forecast"] .timed {
   opacity: 0.7;
   border-style: dashed;
 }
-.fc-table tr.fr-row {
+/* Tint, edge and divider live on every cell, so the row reads as one band across the table. */
+.fc-table tr.fr-row td {
   background: color-mix(in srgb, var(--free) 4%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--free) 30%, var(--grid));
 }
 .fc-table tr.fr-row td:first-child {
   box-shadow: inset 3px 0 0 var(--free);
