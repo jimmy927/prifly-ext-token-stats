@@ -5,6 +5,8 @@ import {
   dailyBurn,
   forecast,
   forecastPoints,
+  freeResetEffect,
+  freeResetPool,
   poolForecast,
   valueAt,
   windowState,
@@ -257,4 +259,79 @@ test("the pool forecast refills a spent account to 100 left at its reset, never 
   ]);
   expect(Math.max(...pool.map(([, v]) => v))).toBeLessThanOrEqual(200);
   expect(poolForecast([], NOW)).toEqual([]);
+});
+
+test("a free reset on a spent account is used now and leaves the rest of the week at its burn", () => {
+  // Spent, reset in 22 h; hit 100 h into the week gives 1 %/h: 22 h dry, 22% burnt after a reset, all covered.
+  const reset = NOW + 22 * HOUR;
+  const free = { left: 1, usableNow: true, endsAt: NOW + 5 * DAY };
+  const hitAt = reset - WEEK + 100 * HOUR;
+  const weekly = windowState([wk(-1, 100, reset), wk(0, 100, reset)], WEEK, NOW, hitAt);
+  expect(freeResetEffect(free, weekly, NOW)).toEqual({
+    usedAt: NOW,
+    spentNow: true,
+    dryHours: 22,
+    coveredHours: 22,
+    atReset: 22,
+  });
+});
+
+test("a free reset on an account that runs dry later is used at its run-out", () => {
+  // 80% at 1 %/h, reset in 50 h: out in 20 h, 30 h dry; a reset then covers all 30 h and ends the week at 30%.
+  const reset = NOW + 50 * HOUR;
+  const weekly = windowState([wk(-24, 56, reset), wk(0, 80, reset)], WEEK, NOW);
+  const free = { left: 2, usableNow: false, endsAt: NOW + 5 * DAY };
+  expect(freeResetEffect(free, weekly, NOW)).toEqual({
+    usedAt: NOW + 20 * HOUR,
+    spentNow: false,
+    dryHours: 30,
+    coveredHours: 30,
+    atReset: 30,
+  });
+});
+
+test("a free reset covers only part of the dry hours when 100% at the burn is used up first", () => {
+  // 50% at 2 %/h, reset in 100 h: out in 25 h, 75 h dry; 100% lasts 50 h, so 50 h covered and the week ends at 100%.
+  const reset = NOW + 100 * HOUR;
+  const weekly = windowState([wk(-24, 2, reset), wk(0, 50, reset)], WEEK, NOW);
+  expect(weekly?.ratePerHour).toBe(2);
+  const effect = freeResetEffect({ left: 1, usableNow: true, endsAt: reset }, weekly, NOW);
+  expect(effect?.dryHours).toBe(75);
+  expect(effect?.coveredHours).toBe(50);
+  expect(effect?.atReset).toBe(100);
+});
+
+test("no free reset, none left, or no rate gives no effect, and the pool ignores them", () => {
+  const reset = NOW + 50 * HOUR;
+  const weekly = windowState([wk(-24, 56, reset), wk(0, 80, reset)], WEEK, NOW);
+  expect(freeResetEffect(null, weekly, NOW)).toBeNull();
+  expect(freeResetEffect({ left: 0, usableNow: true, endsAt: reset }, weekly, NOW)).toBeNull();
+  const noRate = windowState([wk(0, 80, null)], WEEK, NOW);
+  expect(freeResetEffect({ left: 1, usableNow: true, endsAt: reset }, noRate, NOW)).toBeNull();
+  const meta = (email: string, freeResets: AccountMeta["freeResets"]): AccountMeta => ({
+    email,
+    label: email,
+    startsNewSessions: false,
+    windowMs: { "7d": WEEK, "5h": 5 * HOUR },
+    freeResets,
+  });
+  const readings = [
+    wk(-24, 56, reset),
+    wk(0, 80, reset),
+    wk(-24, 56, reset, "b@x.com"),
+    wk(0, 80, reset, "b@x.com"),
+  ];
+  const none = forecast(readings, [meta("a@x.com", null), meta("b@x.com", null)], NOW, new Map());
+  expect(none.freeResetPool).toBeNull();
+  expect(none.accounts.every((a) => a.freeResetEffect === null)).toBe(true);
+  // One of the two has a reset: the pool's 60 dry hours drop by its 30 covered.
+  const free = { left: 1, usableNow: true, endsAt: reset };
+  const one = forecast(readings, [meta("a@x.com", free), meta("b@x.com", null)], NOW, new Map());
+  expect(one.freeResetPool).toEqual({
+    dryHours: 30,
+    coveredHours: 30,
+    poolDryHours: 60,
+    poolDryHoursAfter: 30,
+  });
+  expect(freeResetPool(one.accounts)).toEqual(one.freeResetPool);
 });

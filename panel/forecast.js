@@ -130,29 +130,66 @@ export function runwayBanner(read) {
   };
 }
 
-/**
- * The "Reset for free" offer (claude.ai Settings → Usage), for the account's
- * row: how many are left and when the soonest-expiring one is gone. "" with
- * none.
- */
-export function freeResetNote(a) {
+// ---- Free resets ("Reset for free", claude.ai Settings → Usage) ----
+
+/** Whether the account has a free reset left. */
+const hasFree = (a) => a.freeResets !== null && a.freeResets.left > 0;
+
+/** The pill under the account's name. */
+export function freeResetChip(a) {
   const r = a.freeResets;
-  if (r === null || r.left <= 0) return "";
   const count = r.left === 1 ? "1 free reset" : `${r.left} free resets`;
-  const usable = r.usableNow ? "" : " · not usable yet";
-  return ` <span class="small">${count} · until ${when(r.endsAt)} CET${usable}</span>`;
+  const title = `Reset for free (claude.ai Settings → Usage): puts the weekly limit back to 0%. Ends ${when(r.endsAt)} CET.`;
+  return `<div class="fr-under"><span class="fr-chip${r.usableNow ? "" : " later"}" title="${title}"><span class="fr-ico" aria-hidden="true">↺</span>${count}</span></div>`;
+}
+
+/** The dashed bar under the weekly one: 0% to where the week ends if the reset is used when it runs dry. */
+export function afterResetBar(e, colour) {
+  const hatch = `repeating-linear-gradient(135deg, ${colour} 0 2px, transparent 2px 5px)`;
+  const at = e.spentNow ? "now" : `at run-out ${when(e.usedAt)} CET`;
+  return `<span class="wk fr-ghost" title="Free reset used ${at}: the weekly limit back to 0%, then the same burn until the weekly reset.">
+    <span class="fr-ghost-bar"><span class="fr-ghost-fill" style="width:${e.atReset}%;background:${hatch}"></span></span>
+    <span class="fr-ghost-label">↺ 0% → ${pct(e.atReset)}</span></span>`;
+}
+
+/** In the Runs-out column: how much of the dry time the reset covers, and when to use it. "" when nothing is dry. */
+export function freeResetCovers(e) {
+  if (e.dryHours === 0) return "";
+  const full = e.coveredHours >= e.dryHours - 0.5;
+  const use = e.spentNow ? "use now" : `best used at run-out, ${when(e.usedAt)} CET`;
+  const covers = full
+    ? `all ${Math.round(e.dryHours)} h dry`
+    : `${Math.round(e.coveredHours)} h of ${Math.round(e.dryHours)} h dry`;
+  return `<span class="fr-covers${full ? " full" : ""}">↺ covers ${covers}</span><span class="small">${use}</span>`;
+}
+
+/** The line under the banner: who has a free reset, until when, and what they do for the pool's dry hours. */
+export function freeResetSummary(accounts, pool) {
+  const free = accounts.filter(hasFree);
+  if (free.length === 0) return "";
+  const names = free.map((a) => `<b class="fr-name">${esc(a.label.split("@")[0])}</b>`).join(", ");
+  const ends = [...new Set(free.map((a) => dayName(a.freeResets.endsAt)))].join(", ");
+  const usable = free.filter((a) => a.freeResets.usableNow).length;
+  const now = usable === free.length ? "all usable now" : `${usable} usable now`;
+  const head = `<span class="fr-ico big" aria-hidden="true">↺</span><span><b>${free.length}</b> of <b>${accounts.length}</b> accounts have a free reset (${names}) · ${now} · they end ${ends}.`;
+  if (pool === null) return `${head}</span>`;
+  return `${head} Used as each runs dry they cover <b>${Math.round(pool.coveredHours)}</b> of their <b>${Math.round(pool.dryHours)}</b> dry account-hours — the pool's gap drops from <b>${Math.round(pool.poolDryHours)}</b> to <b>${Math.round(pool.poolDryHoursAfter)}</b>.</span>`;
 }
 
 function runwayRow(a, i) {
   const next = a.startsNewSessions ? ' <span class="fc-tag next">new sessions</span>' : "";
-  const free = freeResetNote(a);
-  const who = `<td><span class="who"><i class="sw" style="background:${colourOf(i)}"></i>${esc(a.label)}${next}${free}</span></td>`;
+  const free = hasFree(a);
+  const who = `<td><span class="who"><i class="sw" style="background:${colourOf(i)}"></i>${esc(a.label)}${next}</span>${free ? freeResetChip(a) : ""}</td>`;
   const w = a.weekly;
+  const cls = free ? "row fr-row" : "row";
   if (w === null)
-    return `<tr class="row">${who}<td colspan="5" class="sim-none">${NO_READINGS}</td></tr>`;
+    return `<tr class="${cls}">${who}<td colspan="5" class="sim-none">${NO_READINGS}</td></tr>`;
   const burn = burnCell(w);
-  return `<tr class="row" title="${esc(a.email)}, read ${when(w.readAt)} CET">${who}
-    <td>${weeklyBar(w, colourOf(i))}</td><td class="num">${burn}</td><td>${runsOut(w)}</td>
+  const e = a.freeResetEffect;
+  const after = e === null || e.dryHours === 0 ? "" : afterResetBar(e, colourOf(i));
+  const covers = e === null ? "" : freeResetCovers(e);
+  return `<tr class="${cls}" title="${esc(a.email)}, read ${when(w.readAt)} CET">${who}
+    <td>${weeklyBar(w, colourOf(i))}${after}</td><td class="num">${burn}</td><td>${runsOut(w)}${covers}</td>
     <td>${resets(w.resetsAt)}</td><td>${fiveHour(a.session)}</td></tr>`;
 }
 
@@ -163,6 +200,9 @@ function drawRunway() {
   banner.hidden = read.length === 0;
   banner.classList.toggle("ok", ok);
   banner.innerHTML = html;
+  const summary = freeResetSummary(answer.accounts, answer.freeResetPool);
+  $("fc-free").hidden = summary === "";
+  $("fc-free").innerHTML = summary;
   $("fc-runway").innerHTML = `
     <thead><tr><th>Account</th><th>Weekly limit</th><th class="num">Burn</th><th>Runs out (CET)</th><th>Resets (CET)</th><th>5-hour window</th></tr></thead>
     <tbody>${answer.accounts.map(runwayRow).join("")}</tbody>`;

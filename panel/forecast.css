@@ -7,6 +7,8 @@
   --good-bg: #e8f6ef;
   --warn-bg: #fff6e0;
   --warn-border: #f0cf7a;
+  --free: #6d4fd8;
+  --free-bg: #f1edff;
 }
 :root.dark {
   --bad: #f07a79;
@@ -15,6 +17,8 @@
   --good-bg: #13301f;
   --warn-bg: #2e2612;
   --warn-border: #6b5516;
+  --free: #a996ff;
+  --free-bg: #231d3d;
 }
 body:not([data-view="usage"]) {
   overflow: auto;
@@ -82,6 +86,71 @@ body[data-view="forecast"] .timed {
 .fc-banner b {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
+}
+.fc-free {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: var(--free-bg);
+  border: 1px solid color-mix(in srgb, var(--free) 40%, transparent);
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.fc-free[hidden] {
+  display: none;
+}
+.fc-free b {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.fc-free b.fr-name {
+  font-family: inherit;
+}
+.fr-ico {
+  font-weight: 700;
+}
+.fr-ico.big {
+  font-size: 15px;
+  color: var(--free);
+}
+.fr-under {
+  margin: 4px 0 0 18px;
+}
+.fr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--free);
+  background: var(--free-bg);
+  border: 1px solid color-mix(in srgb, var(--free) 45%, transparent);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.fr-chip.later {
+  opacity: 0.7;
+  border-style: dashed;
+}
+.fc-table tr.fr-row {
+  background: color-mix(in srgb, var(--free) 4%, transparent);
+}
+.fc-table tr.fr-row td:first-child {
+  box-shadow: inset 3px 0 0 var(--free);
+}
+.fr-covers {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 16px;
+  padding: 0 7px;
+  border-radius: 999px;
+  color: var(--free);
+  background: var(--free-bg);
+  border: 1px solid color-mix(in srgb, var(--free) 40%, transparent);
 }
 .fc-table td {
   padding: 7px 8px;
@@ -162,6 +231,33 @@ body[data-view="forecast"] .timed {
   width: 2px;
   margin-left: -1px;
   background: var(--fg);
+}
+/* The same bar after a free reset: dashed outline, 0% up to the weekly reset. */
+.fr-ghost {
+  display: flex;
+  margin-top: 5px;
+}
+.fr-ghost-bar {
+  position: relative;
+  width: 280px;
+  height: 7px;
+  border-radius: 3px;
+  border: 1px dashed color-mix(in srgb, var(--free) 70%, transparent);
+  box-sizing: border-box;
+}
+.fr-ghost-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  opacity: 0.8;
+  border-radius: 2px 0 0 2px;
+}
+.fr-ghost-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--free);
+  min-width: 100px;
 }
 .wk-label {
   font-family: var(--mono);
