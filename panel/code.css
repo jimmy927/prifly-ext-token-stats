@@ -30,17 +30,6 @@
   position: relative;
   user-select: none;
 }
-.code .legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 340px;
-}
-.code .legend span span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .code tr.row.chosen td {
   background: var(--accent);
 }

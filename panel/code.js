@@ -12,6 +12,8 @@ let host = null;
 let answer = null;
 let asked = 0;
 let sortKey = "spend";
+/** The repositories the legends switched off, in every Code chart at once. */
+const hidden = new Set();
 
 const $ = (id) => document.getElementById(id);
 const dash = "—";
@@ -130,28 +132,58 @@ function colourMap() {
   return byKey;
 }
 
+/**
+ * A legend entry that hides or shows its repository in every Code chart, as
+ * the Tokens view's legend does; a double-click shows only that repository.
+ */
+function legendItem(key, colour, text) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.setAttribute("aria-pressed", String(!hidden.has(key)));
+  const other = key.startsWith("\u0000");
+  button.title = other
+    ? `${text}. Click to hide or show.`
+    : `${text}. Click to hide or show; double-click to show only this.`;
+  button.innerHTML = `<i class="sw" style="background:${colour}"></i><span>${esc(text)}</span>`;
+  button.addEventListener("click", () => {
+    if (hidden.has(key)) hidden.delete(key);
+    else hidden.add(key);
+    drawCode();
+  });
+  if (!other) {
+    button.addEventListener("dblclick", () => {
+      codeChoices.repo = key;
+      hidden.clear();
+      host.save();
+      void loadCode();
+    });
+  }
+  return button;
+}
+
 function drawLegend(colourOf) {
   const legend = $("code-legend");
   legend.replaceChildren();
   if (!answer.byRepo) return;
   for (const [i, s] of answer.cost.entries()) {
     const line = answer.lines[i];
-    const item = document.createElement("span");
-    item.innerHTML = `<i class="sw" style="background:${colourOf.get(s.key)}"></i><span>${esc(s.label)} · ${usd(s.total)} · ${fmt(line?.total ?? 0)} lines</span>`;
-    legend.appendChild(item);
+    const text = `${s.label} · ${usd(s.total)} · ${fmt(line?.total ?? 0)} lines`;
+    legend.appendChild(legendItem(s.key, colourOf.get(s.key), text));
   }
 }
 
 function drawCharts() {
   const handlers = { onZoom: host.zoom, onBack: host.back };
-  const shades = colours(answer.cost);
+  const all = colours(answer.cost);
+  // Colours are taken before the hidden series go, so a repository keeps its own.
+  const shades = answer.cost.map((s, i) => [s.key, all[i]]).filter(([key]) => !hidden.has(key));
   const chart = (id, series, format, label, empty) =>
     drawChart(
       $(id),
       answer,
       {
-        series: series.some((s) => s.total > 0) ? series : [],
-        colours: shades,
+        series: series.some((s) => s.total > 0) ? series.filter((s) => !hidden.has(s.key)) : [],
+        colours: shades.map(([, colour]) => colour),
         kind: "bars",
         format,
         label,
@@ -193,13 +225,13 @@ function drawRatios(colourOf) {
   const shades = new Map(
     answer.perKByRepo.map((s) => [s.key, colourOf.get(s.key) ?? "var(--other)"]),
   );
-  ratioChart("code-perk-repos", answer.perKByRepo, shades, "Dollars per 1,000 lines by repository");
+  const shown = answer.perKByRepo.filter((s) => !hidden.has(s.key));
+  ratioChart("code-perk-repos", shown, shades, "Dollars per 1,000 lines by repository");
   const legend = $("code-perk-legend");
   legend.replaceChildren();
   for (const s of answer.perKByRepo) {
-    const item = document.createElement("span");
-    item.innerHTML = `<i class="sw" style="background:${shades.get(s.key)}"></i><span>${esc(s.label)} · ${perK(s.total)} per 1k</span>`;
-    legend.appendChild(item);
+    const text = `${s.label} · ${perK(s.total)} per 1k`;
+    legend.appendChild(legendItem(s.key, shades.get(s.key), text));
   }
 }
 
