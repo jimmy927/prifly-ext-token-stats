@@ -169,6 +169,40 @@ function drawCharts() {
   );
 }
 
+/** A line chart of dollars per 1,000 lines; `series` without a point draws the `empty` note. */
+function ratioChart(id, series, shades, label) {
+  const shown = series.filter((s) => s.values.some((v) => v !== null));
+  drawChart(
+    $(id),
+    answer,
+    {
+      series: shown,
+      colours: shown.map((s) => shades.get(s.key)),
+      kind: "lines",
+      format: usd,
+      label,
+      empty: "Too few lines added in this stretch to price them.",
+    },
+    { onZoom: host.zoom, onBack: host.back },
+  );
+}
+
+function drawRatios(colourOf) {
+  const total = new Map([["all", "var(--fg)"]]);
+  ratioChart("code-perk", [answer.perK], total, "Dollars per 1,000 lines over time");
+  const shades = new Map(
+    answer.perKByRepo.map((s) => [s.key, colourOf.get(s.key) ?? "var(--other)"]),
+  );
+  ratioChart("code-perk-repos", answer.perKByRepo, shades, "Dollars per 1,000 lines by repository");
+  const legend = $("code-perk-legend");
+  legend.replaceChildren();
+  for (const s of answer.perKByRepo) {
+    const item = document.createElement("span");
+    item.innerHTML = `<i class="sw" style="background:${shades.get(s.key)}"></i><span>${esc(s.label)} · ${perK(s.total)} per 1k</span>`;
+    legend.appendChild(item);
+  }
+}
+
 const COLUMNS = [
   { key: "spend", label: "Spend", show: (r) => usd(r.spend) },
   { key: "lines", label: "Lines added", show: (r) => (r.lines === null ? dash : fmt(r.lines)) },
@@ -225,5 +259,6 @@ export function drawCode() {
   const colourOf = colourMap();
   drawLegend(colourOf);
   drawCharts();
+  drawRatios(colourOf);
   drawTable(colourOf);
 }

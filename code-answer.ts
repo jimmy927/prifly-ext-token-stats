@@ -13,6 +13,7 @@
 import { type Answerer, type Row, readParams, type Series } from "./answer";
 import type { Commit } from "./git";
 import type { LinesSource } from "./git-cache";
+import { perKSeries, type RatioSeries } from "./per-k";
 import { floorTo, type QueryParams } from "./query";
 
 export type CodeParams = QueryParams & {
@@ -50,6 +51,10 @@ export type CodeAnswer = {
   /** The two charts' series: the same keys in the same order, so a repository keeps its colour. */
   cost: Series[];
   lines: Series[];
+  /** Dollars per 1,000 lines over a trailing day, for all shown repositories together (`per-k.ts`). */
+  perK: RatioSeries;
+  /** The same, one line to each of the repositories with the most spend that added lines. */
+  perKByRepo: RatioSeries[];
   /** The shown repository's, or all repositories'; `perK` counts only spend that has lines to it. */
   totals: { spend: number; lines: number; perK: number | null };
   rows: CodeRow[];
@@ -203,6 +208,13 @@ export function codeAnswer(answerer: Answerer, git: LinesSource, params: CodePar
     params.repo ?? "All repositories",
     count,
   );
+  const ratios = perKSeries(
+    chosen.filter((e) => git.lines(e.name) !== null),
+    bucket,
+    count,
+    params.top,
+    params.repo ?? "All repositories",
+  );
   const rows = rowsOf(spend.rows, stretchLines);
   const shown = rows.filter((r) => params.repo === null || r.key === params.repo);
   const counted = shown.filter((r) => r.lines !== null);
@@ -217,6 +229,7 @@ export function codeAnswer(answerer: Answerer, git: LinesSource, params: CodePar
     byRepo: params.byRepo,
     repos: [...new Set([...answerer.values("repo"), ...git.names()])],
     ...charts,
+    ...ratios,
     totals: {
       spend: sum(shown.map((r) => r.spend)),
       lines,

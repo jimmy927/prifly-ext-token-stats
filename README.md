@@ -130,7 +130,14 @@ filters hide.
   toggle, which gives each chart a line per repository.
 - Three tiles: **Spend**, **Lines added** and **$ per 1k lines**.
 - Two charts, **Token spend per bucket** and **Lines added per bucket**, on the
-  same buckets. Zooming, going back and panning act on both.
+  same buckets. Zooming, going back and panning act on all four charts.
+- **Dollars per 1,000 lines** over time, for everything shown together, and
+  **by repository**, one line each for the repositories with the most spend
+  that added lines. Each point is the spend and the lines of the trailing day
+  (or of its own bucket, when a bucket is a day or longer): lines land in
+  lumps when a branch reaches the default one, so an hour's ratio alone swings
+  wildly. A window with fewer than 100 lines is a gap. Only repositories with
+  a checkout here count, as in the tile (`per-k.ts`).
 - A table per repository: spend, lines added, $ per 1k lines, share of spend
   and share of lines. Double-click a row to show only that repository.
 - A repository with spend and no checkout on this machine (a cloud-only one)

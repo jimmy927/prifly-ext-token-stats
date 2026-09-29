@@ -45,7 +45,7 @@ function frame(host, answer, visible) {
 
 function peak(answer, visible) {
   if (visible.kind === "lines") {
-    return Math.max(0, ...visible.series.flatMap((s) => s.values));
+    return Math.max(0, ...visible.series.flatMap((s) => s.values.filter((v) => v !== null)));
   }
   let most = 0;
   for (let k = 0; k < answer.buckets.length; k++) {
@@ -95,14 +95,23 @@ function bars(svg, f, visible, y) {
   });
 }
 
+/** A line through each series' values; a `null` value is a gap the line breaks at. */
 function lines(svg, f, visible, y) {
   const bw = f.plotW / f.n;
   visible.series.forEach((s, j) => {
-    const d = s.values
-      .map(
-        (v, k) => `${k === 0 ? "M" : "L"}${(M.l + (k + 0.5) * bw).toFixed(1)} ${y(v).toFixed(1)}`,
-      )
-      .join("");
+    let d = "";
+    let open = false;
+    for (const [k, v] of s.values.entries()) {
+      if (v === null) {
+        open = false;
+        continue;
+      }
+      const px = M.l + (k + 0.5) * bw;
+      d += `${open ? "L" : "M"}${px.toFixed(1)} ${y(v).toFixed(1)}`;
+      // A point alone between gaps still shows, as a dot.
+      if (!open && (s.values[k + 1] ?? null) === null) d += "h0.1";
+      open = true;
+    }
     el(
       "path",
       {
@@ -111,6 +120,7 @@ function lines(svg, f, visible, y) {
         stroke: visible.colours[j],
         "stroke-width": 2,
         "stroke-linejoin": "round",
+        "stroke-linecap": "round",
       },
       svg,
     );
