@@ -118,11 +118,11 @@ export function runwayBanner(read) {
   if (spent + dry === 0)
     return {
       ok: true,
-      html: `<span>${read.length - unknown} of <b>${read.length}</b> accounts last until their weekly reset at their burn.${untold}</span>`,
+      html: `<span>${read.length - unknown} of <b>${read.length}</b> accounts last until their weekly reset at the average burn.${untold}</span>`,
     };
   const parts = [
     spent > 0 ? `${spent} spent now` : "",
-    dry > 0 ? `${dry} run dry at their burn` : "",
+    dry > 0 ? `${dry} run dry at the average burn` : "",
   ];
   return {
     ok: false,

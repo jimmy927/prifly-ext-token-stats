@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   AHEAD,
+  averageRate,
   burnRate,
   dailyBurn,
   forecast,
@@ -185,7 +186,42 @@ test("daily burn keeps the last 14 days", () => {
   expect(days.every((d) => d.burn === 1)).toBe(true);
 });
 
-test("the pool counts what each account has left, an account with no rate held", () => {
+test("the average rate is the mean of the accounts that have one", () => {
+  expect(averageRate([1, null, 3])).toBe(2);
+  expect(averageRate([null, null])).toBeNull();
+  expect(averageRate([])).toBeNull();
+});
+
+test("every account is forecast at the average rate, its own shown beside it", () => {
+  const meta = (email: string): AccountMeta => ({
+    email,
+    label: email,
+    startsNewSessions: false,
+    windowMs: { "7d": WEEK, "5h": 5 * HOUR },
+    freeResets: null,
+  });
+  const reset = NOW + 100 * HOUR;
+  // a burns 1 %/h, b 3 %/h: both are forecast at 2 %/h.
+  const readings = [
+    wk(-10, 10, reset),
+    wk(-10, 10, reset, "b@x.com"),
+    wk(0, 20, reset),
+    wk(0, 40, reset, "b@x.com"),
+  ];
+  const answer = forecast(readings, [meta("a@x.com"), meta("b@x.com")], NOW, new Map());
+  const [a, b] = answer.accounts;
+  expect(answer.averageRate).toBe(2);
+  expect(a?.weekly?.ratePerHour).toBe(1);
+  expect(b?.weekly?.ratePerHour).toBe(3);
+  expect(a?.weekly?.forecastRate).toBe(2);
+  expect(b?.weekly?.forecastRate).toBe(2);
+  // At 2 %/h a runs out in 40 h, b in 30 h.
+  expect(a?.weekly?.runsOutAt).toBe(NOW + 40 * HOUR);
+  expect(b?.weekly?.runsOutAt).toBe(NOW + 30 * HOUR);
+  expect(valueAt(a?.forecast ?? [], NOW + 10 * HOUR)).toBe(40);
+});
+
+test("the pool counts what each account has left, an account with no rate of its own at the average", () => {
   const meta = (email: string): AccountMeta => ({
     email,
     label: email,
@@ -210,26 +246,30 @@ test("the pool counts what each account has left, an account with no rate held",
   const [a, b, c] = answer.accounts;
   expect(a?.weekly?.ratePerHour).toBe(1);
   expect(a?.forecast.length).toBeGreaterThan(0);
+  // b has no rate of its own: it is forecast at the average, a's 1 %/h.
   expect(b?.weekly?.ratePerHour).toBeNull();
-  expect(b?.forecast).toEqual([]);
+  expect(b?.weekly?.forecastRate).toBe(1);
+  expect(answer.averageRate).toBe(1);
   expect(c?.weekly).toBeNull();
   // Now: a has 58 left, b 70 (c has no readings and is not counted).
   const k = (NOW - answer.grid.from) / HOUR;
   expect(answer.grid.pool[k]).toBe(128);
-  // 10 h on: a at 52, b held at 30.
-  expect(answer.grid.pool[k + 10]).toBe(118);
-  // Past a's reset it has 99 left, climbing again from 0; b still held at 70.
-  expect(answer.grid.pool[k + 51]).toBe(169);
+  // 10 h on: a at 52, b at 40.
+  expect(answer.grid.pool[k + 10]).toBe(108);
+  // Past a's reset it has 99 left, climbing again from 0; b at 81.
+  expect(answer.grid.pool[k + 51]).toBe(118);
   // The drawn lines: measured from the first moment both had a reading, then a's reset as a step.
   expect(answer.pool.measured).toEqual([
     [NOW - 0.5 * HOUR, 58.5 + 70],
     [NOW, 128],
   ]);
-  expect(answer.pool.forecast.slice(0, 4)).toEqual([
+  // a's reset a step; b empty at 70 h.
+  expect(answer.pool.forecast).toEqual([
     [NOW, 128],
-    [NOW + 50 * HOUR, 78],
-    [NOW + 50 * HOUR, 170],
-    [NOW + AHEAD, 170 - (AHEAD - 50 * HOUR) / HOUR],
+    [NOW + 50 * HOUR, 28],
+    [NOW + 50 * HOUR, 120],
+    [NOW + 70 * HOUR, 80],
+    [NOW + AHEAD, 100 - (AHEAD - 50 * HOUR) / HOUR],
   ]);
   expect(answer.firstAt).toBe(NOW - 2 * HOUR);
   // The chart starts at the first reading's hour, not 3 days back with nothing measured.
@@ -239,7 +279,7 @@ test("the pool counts what each account has left, an account with no rate held",
   // Readings older than 3 days: it starts 3 days back.
   const older = forecast([wk(-100, 5, reset), ...readings], [meta("a@x.com")], NOW, new Map());
   expect(older.grid.from).toBe(NOW - 3 * DAY);
-  expect(b?.hourly[k + 10]).toBe(30);
+  expect(b?.hourly[k + 10]).toBe(40);
   expect(c?.hourly.every((v) => v === null)).toBe(true);
   expect(a?.hourly[k + 10]).toBe(52);
 });

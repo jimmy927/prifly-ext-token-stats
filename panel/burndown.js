@@ -369,7 +369,10 @@ function nowLine(svg, f, answer) {
     { ...at, x: f.x(now) + 124, "text-anchor": "start", class: "halo" },
     svg,
   );
-  ahead.textContent = "forecast at each account's burn";
+  ahead.textContent =
+    answer.averageRate == null
+      ? "forecast"
+      : `forecast at the average burn, ${answer.averageRate.toFixed(2)} %/h`;
   // Seven days of weekly windows push now right: the words go rather than being cut.
   if (f.x(now) + 124 + ahead.getComputedTextLength() > f.width) ahead.remove();
 }

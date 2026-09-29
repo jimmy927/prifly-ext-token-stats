@@ -8,6 +8,9 @@
  * back past the start of the window the latest reading is in. Where the
  * readings span under an hour it is the latest reading's average since that
  * start, when the window is known and an hour old: every window starts at 0.
+ * The weekly forecast runs every account at the average of those rates:
+ * which account is used, and so which burns fast, is chance, so one
+ * account's own rate says nothing about its next days.
  * Pure functions: `index.ts` hands them the readings and the time.
  */
 
@@ -37,8 +40,10 @@ export type WindowState = {
   percent: number;
   resetsAt: number | null;
   readAt: number;
-  /** Percent a hour, from `rateFrom`; null when neither gives one. */
+  /** Its own percent a hour, from `rateFrom`; null when neither gives one. */
   ratePerHour: number | null;
+  /** The percent a hour its outcome and forecast run at: the pool's average, else its own. */
+  forecastRate: number | null;
   /**
    * readings: the rise over the last 24 h of readings in this window;
    * reset: the latest percent over the hours since the window started — for
@@ -133,6 +138,8 @@ export type ForecastAnswer = {
   /** When the oldest reading kept was taken, null before the first. */
   firstAt: number | null;
   accounts: AccountForecast[];
+  /** The average weekly rate of the accounts that have one, which every forecast runs at; null with none. */
+  averageRate: number | null;
   /** Oldest first; the last is today, so far. Days before the readings are reconstructed. */
   daily: PoolDay[];
   /**
@@ -206,25 +213,29 @@ function rateOf(
 }
 
 /**
- * Where the latest reading and its rate leave one window, at `now`; `hitAt`
- * the minute the transcripts say it hit 100, when they do.
+ * Where the latest reading and a rate leave one window, at `now`; `hitAt`
+ * the minute the transcripts say it hit 100, when they do. The rate is
+ * `average` when given, else the window's own.
  */
 export function windowState(
   readings: readonly Reading[],
   windowMs: number,
   now: number,
   hitAt: number | null = null,
+  average: number | null = null,
 ): WindowState | null {
   const last = readings.at(-1);
   if (last === undefined) return null;
-  const { rate, from } = rateOf(readings, windowMs, hitAt);
+  const { rate: own, from } = rateOf(readings, windowMs, hitAt);
+  const rate = average ?? own;
   const { usedPercent: percent, resetsAt, at: readAt } = last;
   const state: WindowState = {
     percent,
     resetsAt,
     readAt,
-    ratePerHour: rate,
-    rateFrom: rate === null ? null : from,
+    ratePerHour: own,
+    rateFrom: own === null ? null : from,
+    forecastRate: rate,
     outcome: "unknown",
     runsOutAt: null,
     atReset: null,
@@ -352,14 +363,15 @@ export function freeResetEffect(
   now: number,
 ): FreeResetEffect | null {
   if (freeResets === null || freeResets.left <= 0) return null;
-  if (weekly === null || weekly.ratePerHour === null) return null;
+  const rate = weekly?.forecastRate ?? null;
+  if (weekly === null || rate === null) return null;
   const spentNow = weekly.outcome === "spent";
   return {
     usedAt: spentNow ? now : (weekly.runsOutAt ?? now),
     spentNow,
     dryHours: weekly.dryHours,
-    coveredHours: Math.min(weekly.dryHours, 100 / weekly.ratePerHour),
-    atReset: Math.min(100, weekly.ratePerHour * weekly.dryHours),
+    coveredHours: Math.min(weekly.dryHours, 100 / rate),
+    atReset: Math.min(100, rate * weekly.dryHours),
   };
 }
 
@@ -378,18 +390,31 @@ export function freeResetPool(lines: readonly AccountForecast[]): FreeResetPool 
   };
 }
 
-/** One account's runway and lines, and the line it is held to ahead: its forecast, or level without a rate. */
+/**
+ * The average of the accounts' own weekly rates, where they have one: the
+ * rate every weekly forecast runs at. null when none has a rate.
+ */
+export function averageRate(rates: readonly (number | null)[]): number | null {
+  const known = rates.filter((r): r is number => r !== null);
+  return known.length === 0 ? null : known.reduce((s, r) => s + r, 0) / known.length;
+}
+
+/**
+ * One account's runway and lines at `average` (its own rate when null), and
+ * the line it is held to ahead: its forecast, or level without a rate.
+ */
 function accountLines(
   meta: AccountMeta,
   own: Record<Window, Reading[]> | undefined,
   now: number,
   grid: number[],
   hitAt: number | null,
+  average: number | null,
 ): { line: AccountForecast; holding: Point[] } {
   const weeklyMs = meta.windowMs["7d"];
   const sessionMs = meta.windowMs["5h"];
   const weekly =
-    own && weeklyMs !== undefined ? windowState(own["7d"], weeklyMs, now, hitAt) : null;
+    own && weeklyMs !== undefined ? windowState(own["7d"], weeklyMs, now, hitAt, average) : null;
   const session = own && sessionMs !== undefined ? windowState(own["5h"], sessionMs, now) : null;
   const measured = weeklyPoints(own).filter(([t]) => t >= now - MEASURED);
   let holding: Point[] = [];
@@ -397,8 +422,8 @@ function accountLines(
   if (weekly !== null && weeklyMs !== undefined) {
     const ahead = (rate: number) =>
       forecastPoints(weekly.percent, weekly.readAt, rate, weekly.resetsAt, weeklyMs, now + AHEAD);
-    holding = ahead(weekly.ratePerHour ?? 0);
-    if (weekly.ratePerHour !== null) forecast = holding;
+    holding = ahead(weekly.forecastRate ?? 0);
+    if (weekly.forecastRate !== null) forecast = holding;
   }
   const at = (line: Point[], t: number) =>
     t <= (weekly?.readAt ?? Number.NEGATIVE_INFINITY) ? valueAt(measured, t) : valueAt(line, t);
@@ -472,8 +497,16 @@ export function forecast(
   const grid: number[] = [];
   for (let t = from; t <= now + AHEAD; t += HOUR) grid.push(t);
   const byEmail = byAccount(readings);
+  const hit = (meta: AccountMeta) => ranOut.get(meta.email) ?? null;
+  const ownRate = (meta: AccountMeta) => {
+    const weeklyMs = meta.windowMs["7d"];
+    const own = byEmail.get(meta.email)?.["7d"];
+    if (own === undefined || weeklyMs === undefined) return null;
+    return windowState(own, weeklyMs, now, hit(meta))?.ratePerHour ?? null;
+  };
+  const average = averageRate(accounts.map(ownRate));
   const worked = accounts.map((meta) =>
-    accountLines(meta, byEmail.get(meta.email), now, grid, ranOut.get(meta.email) ?? null),
+    accountLines(meta, byEmail.get(meta.email), now, grid, hit(meta), average),
   );
   const lines = worked.map((w) => w.line);
   const read = accounts
@@ -490,6 +523,7 @@ export function forecast(
   return {
     now,
     accounts: lines,
+    averageRate: average,
     grid: { from, step: HOUR, pool },
     pool: { measured: poolMeasured(read, now), forecast: poolForecast(holdings, now + AHEAD) },
     freeResetPool: freeResetPool(lines),

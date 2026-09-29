@@ -29,16 +29,23 @@ export function burndownSpan(answer) {
   return `Weekly % left, ${span} measured, 6 days ahead${back}`;
 }
 
+/** The rate every forecast line runs at, and why it is the same for all. */
+const averageWords = (rate) =>
+  rate == null
+    ? " No account has a rate yet, so none has a forecast line."
+    : ` The average burn is the mean of the accounts' own burns in the table above, ${rate.toFixed(2)} %/h: which account is in use is chance, so each is forecast at the same rate.`;
+
 /** What the chart under it draws, in the mode on screen, and how far back the readings go. */
 export function burndownNote(mode, answer) {
   const since =
     answer.firstAt >= answer.grid.from
       ? ` Readings began ${dayName(answer.firstAt)} ${clockName(answer.firstAt)} CET, where the ${reachesBack(answer) ? "% lines start" : "chart starts"}; while they span only minutes each is a dot, and accounts read at the same % and minute show as rings round one spot.`
       : "";
+  const AVERAGE = averageWords(answer.averageRate);
   const lines =
     mode === "pool"
-      ? `What all ${answer.accounts.length} accounts have left together: the sum of each one's weekly % left, so at most ${answer.accounts.length * 100}%. At an account's reset its share refills to 100 and it burns again at its rate; an account with no rate is held where it is.`
-      : "Each line is the % of its weekly limit that account has left: 100% at its reset, falling at its burn, stopping at 0% (empty) and jumping back to 100% at its next reset. An account with no rate has no forecast line.";
+      ? `What all ${answer.accounts.length} accounts have left together: the sum of each one's weekly % left, so at most ${answer.accounts.length * 100}%. At an account's reset its share refills to 100 and it burns again at the average burn.${AVERAGE}`
+      : `Each line is the % of its weekly limit that account has left: 100% at its reset, falling at the average burn, stopping at 0% (empty) and jumping back to 100% at its next reset.${AVERAGE}`;
   const unplaced = answer.history.unplaced;
   const whose = mode === "pool" ? "the pool's, where every account has one," : "each";
   const per100 = answer.past.per100;

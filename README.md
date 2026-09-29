@@ -35,7 +35,9 @@ the status line says when the accounts' limits were last read.
   account-hours with no tokens that leaves, and any account with too few
   readings to tell.
 - **Burn-down forecast**: the % of its weekly limit each account has left,
-  the last 3 days as read and the next 6 days forecast at its burn: 100% at
+  the last 3 days as read and the next 6 days forecast at the average burn —
+  the mean of the accounts' own burns, since which account is in use is
+  chance, so every account is forecast at the same rate: 100% at
   its reset, falling to 0% (the red "empty" line) and back to 100% at its
   next reset. **Whole pool** shows instead what all accounts have left
   together (the sum of each one's % left), each account's share refilling to

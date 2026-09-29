@@ -28,7 +28,7 @@ test("the banner counts spent and dry accounts, and the burn column shows each o
   const { ok, html } = runwayBanner(read);
   expect(ok).toBe(false);
   expect(html).toContain("<b>5</b> of <b>5</b> accounts are out before their weekly reset");
-  expect(html).toContain("4 spent now, 1 run dry at their burn");
+  expect(html).toContain("4 spent now, 1 run dry at the average burn");
   expect(html).toContain("<b>332</b> account-hours");
   for (const r of read) expect(burnCell(r)).not.toContain("—");
   expect(burnCell(read[0])).toBe('≥ 1.32 %/h<span class="small">avg since reset</span>');
@@ -105,7 +105,7 @@ test("the burn-down note says what each mode draws and when readings began", () 
   expect(burndownNote("pool", answer)).toContain("refills to 100");
   expect(burndownNote("pool", answer)).toContain("the sum of each one's weekly % left");
   expect(burndownNote("accounts", answer)).toContain(
-    "has left: 100% at its reset, falling at its burn, stopping at 0% (empty) and jumping back to 100% at its next reset",
+    "has left: 100% at its reset, falling at the average burn, stopping at 0% (empty) and jumping back to 100% at its next reset",
   );
   expect(burndownNote("accounts", answer)).toContain("Readings began");
   expect(burndownSpan(answer)).toBe("Weekly % left, 8 min measured, 6 days ahead");
