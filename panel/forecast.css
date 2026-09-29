@@ -16,14 +16,15 @@
   --warn-bg: #2e2612;
   --warn-border: #6b5516;
 }
-body.forecast-on {
+body:not([data-view="usage"]) {
   overflow: auto;
 }
-body.forecast-on .app {
+body:not([data-view="usage"]) .app {
   height: auto;
   min-height: 100%;
 }
-body.forecast-on .usage-only {
+body:not([data-view="usage"]) .usage-only,
+body[data-view="forecast"] .timed {
   display: none;
 }
 .forecast {

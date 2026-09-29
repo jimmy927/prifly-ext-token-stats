@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="simulator.css" />
     <link rel="stylesheet" href="forecast.css" />
+    <link rel="stylesheet" href="code.css" />
     <script>
       // Before the first paint: the window says light or dark in the query.
       if (new URLSearchParams(location.search).get("theme") === "dark") {
@@ -14,12 +15,12 @@
       }
     </script>
   </head>
-  <body>
+  <body data-view="usage">
     <div class="app">
       <div class="bar">
         <fieldset class="group" id="view" aria-label="View"></fieldset>
-        <fieldset class="group usage-only" id="range" aria-label="Time range"></fieldset>
-        <label class="field usage-only">
+        <fieldset class="group timed" id="range" aria-label="Time range"></fieldset>
+        <label class="field timed">
           <span>Bucket</span>
           <select id="bucket"></select>
         </label>
@@ -53,6 +54,33 @@
         <section class="panel heat-box">
           <div class="panel-head" id="heat-title">By weekday and hour</div>
           <div id="heat"></div>
+        </section>
+      </div>
+      <div class="code" id="code" hidden>
+        <div class="bar">
+          <label class="field">
+            <span>Repository</span>
+            <select id="code-repo"></select>
+          </label>
+          <label class="field check">
+            <input type="checkbox" id="code-split" />
+            <span>Split by repo</span>
+          </label>
+          <span class="note" id="code-note" aria-live="polite"></span>
+        </div>
+        <div class="tiles" id="code-tiles"></div>
+        <section class="panel">
+          <div class="panel-head code-head">Token spend per bucket <span class="sub">Drag across a chart to zoom in · double-click or Backspace to go back · ←/→ to pan</span></div>
+          <div class="legend" id="code-legend"></div>
+          <div class="code-chart" id="code-cost"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head code-head">Lines added per bucket <span class="sub">Code files only, on each repository's default branch</span></div>
+          <div class="code-chart" id="code-lines"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head">By repository in this stretch</div>
+          <div class="table-scroll"><table id="code-table"></table></div>
         </section>
       </div>
       <div class="forecast" id="forecast" hidden>

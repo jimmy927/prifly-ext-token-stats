@@ -8,6 +8,9 @@
  * (`remote.ts`). The window's page (`panel/`) asks `api/stats` for each view
  * and `api/status` for how far the reading has got.
  *
+ * The Code view asks `api/code`: the same spend beside the lines of code each
+ * repository's default branch gained (`git.ts`), read on every local scan.
+ *
  * The Forecast view asks `api/forecast`: prifly's account limits, read every
  * 5 minutes into `readings.ts` and turned into runways by `forecast.ts`.
  */
@@ -16,7 +19,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Answerer, readParams } from "./answer";
 import { applyScan } from "./archive";
+import { codeAnswer, readCodeParams } from "./code-answer";
 import { dailyBurn, type ForecastAnswer, forecast } from "./forecast";
+import { GitLines } from "./git-cache";
 import { limitHistory } from "./history";
 import { limitWeight, reconstructPast, withPast } from "./past";
 import type { ExtensionApi, PanelRequest } from "./prifly-api";
@@ -24,6 +29,7 @@ import { Readings } from "./readings";
 import { RemoteSessions } from "./remote";
 import type { FileOut, ScanReply, ScanRequest } from "./scan-worker";
 import { type Batch, buildColumns } from "./store";
+import { checkoutOf, NO_REPO } from "./where";
 
 const LOCAL_EVERY = 60_000;
 const REMOTE_EVERY = 10 * 60_000;
@@ -43,6 +49,9 @@ type Running = {
   scannedAt: number;
   request: ScanRequest;
   readings: Readings;
+  log: ExtensionApi["log"];
+  git: GitLines;
+  gitReading: Promise<void> | null;
   /**
    * The host's `accounts()`, or null on a prifly from before it had one: the
    * Forecast view then says to update prifly.
@@ -72,6 +81,25 @@ function answerer(state: Running): Answerer {
   return state.answerer;
 }
 
+/** Bring the lines of code up to date, for each repository with a checkout here; one read at a time. */
+function readGit(state: Running): Promise<void> {
+  if (state.gitReading !== null) return state.gitReading;
+  const started = Date.now();
+  const checkouts = new Map<string, string>();
+  for (const name of answerer(state).values("repo")) {
+    const path = name === NO_REPO ? null : checkoutOf(name);
+    if (path !== null) checkouts.set(name, path);
+  }
+  state.gitReading = state.git
+    .refresh(checkouts, state.log)
+    .then(() => state.log("git_read", { repos: checkouts.size, ms: Date.now() - started }))
+    .catch((error: unknown) => state.log("git_unreadable", { error: String(error) }))
+    .finally(() => {
+      state.gitReading = null;
+    });
+  return state.gitReading;
+}
+
 function scanLocal(state: Running): Promise<void> {
   if (state.scanning !== null) return state.scanning;
   state.scanning = new Promise<void>((resolve) => {
@@ -89,6 +117,7 @@ function received(state: Running, reply: ScanReply, log: ExtensionApi["log"]): v
   state.scanning = null;
   state.resolveScan?.();
   state.resolveScan = null;
+  void readGit(state);
 }
 
 async function scanRemote(state: Running): Promise<void> {
@@ -173,6 +202,9 @@ export function activate(api: ExtensionApi): () => void {
       archiveFile: join(api.folder, "cache", "archive.json"),
     },
     readings: new Readings(join(api.folder, "cache", "readings.jsonl")),
+    log: api.log,
+    git: new GitLines(join(api.folder, "cache", "git.json")),
+    gitReading: null,
     // A host older than the contract's `accounts()` has no such function.
     accounts: typeof api.accounts === "function" ? () => api.accounts() : null,
   };
@@ -184,6 +216,7 @@ export function activate(api: ExtensionApi): () => void {
   };
   running = state;
   state.readings.load(Date.now());
+  void state.git.load();
   readLimits(state);
   void scanLocal(state);
   const remoteSoon = setTimeout(() => void scanRemote(state), 5_000);
@@ -225,9 +258,14 @@ export async function panel(_panelId: string, request: PanelRequest): Promise<un
     case "refresh":
       readLimits(state);
       await Promise.all([scanLocal(state), scanRemote(state)]);
+      await readGit(state);
       return status(state);
     case "forecast":
       return forecastAnswer(state, request.query);
+    case "code": {
+      if (state.lastScan === null) await scanLocal(state);
+      return codeAnswer(answerer(state), state.git, readCodeParams(request.query, Date.now()));
+    }
     case "stats": {
       if (state.lastScan === null) await scanLocal(state);
       const now = Date.now();

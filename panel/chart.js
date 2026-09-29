@@ -1,7 +1,7 @@
 // The main chart: stacked bars or lines over time, a crosshair tooltip, and
 // a drag that zooms into what it covers.
 
-import { alphabetical, bucketName, niceMax, timeTicks, val } from "./format.js";
+import { alphabetical, bucketName, esc, niceMax, timeTicks, val } from "./format.js";
 import { hideTip, showTip } from "./tip.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -27,7 +27,20 @@ function frame(host, answer, visible) {
   const plotH = height - M.t - M.b;
   const x = (t) => M.l + ((t - x0) / (x1 - x0)) * plotW;
   const time = (px) => x0 + ((px - M.l) / plotW) * (x1 - x0);
-  return { width, height, n, x0, x1, plotW, plotH, x, time, top: niceMax(peak(answer, visible)) };
+  const show = visible.format ?? val;
+  return {
+    width,
+    height,
+    n,
+    x0,
+    x1,
+    plotW,
+    plotH,
+    x,
+    time,
+    show,
+    top: niceMax(peak(answer, visible)),
+  };
 }
 
 function peak(answer, visible) {
@@ -48,7 +61,7 @@ function axes(svg, f) {
   for (let k = 0; k <= 4; k++) {
     const v = (f.top * k) / 4;
     el("line", { x1: M.l, x2: f.width - M.r, y1: y(v), y2: y(v), class: "grid" }, svg);
-    el("text", { x: M.l - 6, y: y(v) + 4, "text-anchor": "end" }, svg).textContent = val(v);
+    el("text", { x: M.l - 6, y: y(v) + 4, "text-anchor": "end" }, svg).textContent = f.show(v);
   }
   for (const tick of timeTicks(f.x0, f.x1, f.plotW)) {
     const px = f.x(tick.t);
@@ -104,7 +117,7 @@ function lines(svg, f, visible, y) {
   });
 }
 
-function tipAt(event, answer, visible, k) {
+function tipAt(event, answer, visible, k, show) {
   const rows = visible.series
     .map((s, j) => ({
       label: s.label,
@@ -113,7 +126,7 @@ function tipAt(event, answer, visible, k) {
       last: s.key === OTHER_KEY,
     }))
     .filter((r) => r.value > 0);
-  showTip(event, bucketName(answer.buckets[k], answer.bucket), alphabetical(rows));
+  showTip(event, bucketName(answer.buckets[k], answer.bucket), alphabetical(rows), true, show);
 }
 
 /** Hover, drag-to-zoom and double-click-to-go-back, on one transparent layer. */
@@ -148,7 +161,7 @@ function interact(svg, f, answer, visible, handlers) {
     cross.setAttribute("x1", mid);
     cross.setAttribute("x2", mid);
     cross.setAttribute("visibility", "visible");
-    tipAt(event, answer, visible, k);
+    tipAt(event, answer, visible, k, f.show);
   });
   const end = (event) => {
     if (start === null) return;
@@ -169,17 +182,20 @@ function interact(svg, f, answer, visible, handlers) {
 
 /**
  * Draw `answer` into `host`. `visible` is the series shown (the legend can
- * hide some), their colours, and "bars" or "lines".
+ * hide some), their colours, and "bars" or "lines". It may also say how this
+ * chart writes a value (`format`, else the Usage measure's `val`), what it is
+ * (`label`) and what to say when it has no series (`empty`), so two charts on
+ * a page can each be in their own unit.
  */
 export function drawChart(host, answer, visible, handlers) {
   host.replaceChildren();
   if (visible.series.length === 0) {
-    host.innerHTML = '<div class="empty">No calls in this stretch with these filters.</div>';
+    host.innerHTML = `<div class="empty">${esc(visible.empty ?? "No calls in this stretch with these filters.")}</div>`;
     return;
   }
   const f = frame(host, answer, visible);
   const svg = el("svg", { width: f.width, height: f.height, role: "img" }, host);
-  svg.setAttribute("aria-label", "Tokens over time");
+  svg.setAttribute("aria-label", visible.label ?? "Tokens over time");
   const y = axes(svg, f);
   if (visible.kind === "lines") lines(svg, f, visible, y);
   else bars(svg, f, visible, y);

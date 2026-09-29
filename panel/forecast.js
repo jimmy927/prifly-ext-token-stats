@@ -365,7 +365,7 @@ function drawNeeded() {
 
 export function drawForecast() {
   if (answer === null) return;
-  const on = document.body.classList.contains("forecast-on");
+  const on = document.body.dataset.view === "forecast";
   if (on) $("status").textContent = statusLine();
   $("fc-empty").hidden = answer.supported && answer.accounts.length > 0;
   $("fc-body").hidden = !$("fc-empty").hidden;

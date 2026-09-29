@@ -2,6 +2,8 @@
 // the answer. The extension answers at `api/…` beside this page.
 
 import { drawChart } from "./chart.js";
+import { BUCKETS, DAY, KINDS, METRIC_ROW, METRICS, RANGES, SEC, SPLITS } from "./choices.js";
+import { codeChoices, codeControls, drawCode, initCode, loadCode, shownCode } from "./code.js";
 import { drawHeat, drawOverview, drawTable } from "./extras.js";
 import { choices, drawForecast, forecastControls, initForecast, loadForecast } from "./forecast.js";
 import {
@@ -16,73 +18,7 @@ import {
 } from "./format.js";
 import { openPicker } from "./picker.js";
 import { drawSimulator } from "./simulator.js";
-
-const SEC = 1000;
-const MIN = 60 * SEC;
-const HOUR = 60 * MIN;
-const DAY = 24 * HOUR;
-
-const RANGES = [
-  ["15m", 15 * MIN],
-  ["1h", HOUR],
-  ["6h", 6 * HOUR],
-  ["24h", DAY],
-  ["3d", 3 * DAY],
-  ["7d", 7 * DAY],
-  ["30d", 30 * DAY],
-  ["90d", 90 * DAY],
-  ["All", 0],
-];
-const BUCKETS = [
-  0,
-  SEC,
-  5 * SEC,
-  15 * SEC,
-  30 * SEC,
-  MIN,
-  5 * MIN,
-  15 * MIN,
-  30 * MIN,
-  HOUR,
-  3 * HOUR,
-  6 * HOUR,
-  12 * HOUR,
-  DAY,
-  7 * DAY,
-];
-export const SPLITS = [
-  ["account", "Account"],
-  ["model", "Model"],
-  ["repo", "Repository"],
-  ["folder", "Folder"],
-  ["source", "Local/remote"],
-  ["session", "Session"],
-  ["none", "Total"],
-];
-const METRICS = [
-  ["cost", "Cost"],
-  ["output", "Output"],
-  ["input", "Input + cache writes"],
-  ["cacheRead", "Cache reads"],
-  ["all", "All tokens"],
-  ["calls", "API calls"],
-];
-const METRIC_ROW = {
-  cost: "cost",
-  output: "output",
-  input: "input",
-  cacheRead: "cacheRead",
-  all: "output",
-  calls: "calls",
-};
-const KINDS = [
-  ["bars", "Bars"],
-  ["lines", "Lines"],
-];
-const VIEWS = [
-  ["usage", "Usage"],
-  ["forecast", "Forecast"],
-];
+import { showView, VIEWS, viewOf } from "./views.js";
 
 const saved = (() => {
   try {
@@ -93,8 +29,8 @@ const saved = (() => {
 })();
 
 const state = {
-  /** "usage": the chart and its tables; "forecast": the accounts' limits (forecast.js). */
-  view: saved.view === "forecast" ? "forecast" : "usage",
+  /** "usage": the chart and its tables; "forecast": the accounts' limits (forecast.js); "code": spend and lines (code.js). */
+  view: viewOf(saved.view),
   range: saved.range ?? 7 * DAY,
   /** A stretch zoomed into, or null to follow `range` up to now. */
   window: null,
@@ -126,6 +62,7 @@ function save() {
         kind,
         filters,
         forecast: choices,
+        code: codeChoices,
       }),
     );
   } catch {
@@ -306,24 +243,29 @@ function chip(dim, value) {
   return span;
 }
 
+/** Ask again for the view shown that has a chart to zoom, pan and reshape: Usage or Code. */
+function reload() {
+  return state.view === "code" ? loadCode() : load();
+}
+
 function zoomTo(from, to) {
   state.history.push(state.window);
   state.window = { from, to: Math.max(to, from + 30 * SEC) };
-  void load();
+  void reload();
 }
 
 function back() {
   if (state.history.length === 0 && state.window === null) return;
   state.window = state.history.pop() ?? null;
-  void load();
+  void reload();
 }
 
 function pan(direction) {
-  const { from, to } = state.answer ?? stretch();
+  const { from, to } = (state.view === "code" ? shownCode() : state.answer) ?? stretch();
   const shift = ((to - from) / 2) * direction;
   state.history.push(state.window);
   state.window = { from: from + shift, to: to + shift };
-  void load();
+  void reload();
 }
 
 function segmented(id, options, get, set) {
@@ -344,16 +286,19 @@ function segmented(id, options, get, set) {
   }
 }
 
-/** Show the chosen view: the other's controls hide, the status line and the reading are its own. */
-function showView() {
-  const forecast = state.view === "forecast";
-  document.body.classList.toggle("forecast-on", forecast);
-  document.getElementById("forecast").hidden = !forecast;
-  if (forecast) void loadForecast();
-  else {
-    void status(false);
-    void load();
-  }
+/** The status line and the reading are each view's own. */
+function show() {
+  showView(state.view, {
+    usage: () => {
+      void status(false);
+      void load();
+    },
+    forecast: () => void loadForecast(),
+    code: () => {
+      void status(false);
+      void loadCode();
+    },
+  });
 }
 
 function controls() {
@@ -363,10 +308,11 @@ function controls() {
     () => state.view,
     (v) => {
       state.view = v;
-      showView();
+      show();
     },
   );
   forecastControls(segmented);
+  codeControls();
   segmented(
     "range",
     RANGES.map(([l, ms]) => [ms, l]),
@@ -375,7 +321,7 @@ function controls() {
       state.range = ms;
       state.window = null;
       state.history = [];
-      void load().then(controls);
+      void reload().then(controls);
     },
   );
   const select = document.getElementById("bucket");
@@ -386,7 +332,7 @@ function controls() {
   select.onchange = () => {
     state.bucket = Number(select.value);
     save();
-    void load();
+    void reload();
   };
   segmented(
     "split",
@@ -443,7 +389,7 @@ document.getElementById("refresh").addEventListener("click", async () => {
   await fetch("api/refresh");
   if (state.view === "forecast") return loadForecast();
   await status(false);
-  await load();
+  await reload();
 });
 
 addEventListener("keydown", (event) => {
@@ -485,14 +431,22 @@ addEventListener("message", (event) => {
 
 function redraw() {
   if (state.view === "forecast") drawForecast();
+  else if (state.view === "code") drawCode();
   else draw();
 }
 
 initForecast(saved.forecast, save);
+initCode(saved.code, {
+  save,
+  zoom: zoomTo,
+  back,
+  /** What the page asks for: the time and bucket the reader chose. */
+  asked: () => ({ ...stretch(), bucket: state.bucket }),
+});
 controls();
 void status(true);
-showView();
+show();
 setInterval(() => {
   if (state.view === "forecast") void loadForecast();
-  else if (state.window === null) void load();
+  else if (state.window === null) void reload();
 }, 60_000);

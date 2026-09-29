@@ -7,7 +7,7 @@ import type { FileOut } from "../archive";
 import { freshState, readText } from "../parse";
 import type { ScanReply, ScanRequest } from "../scan-worker";
 import { buildColumns } from "../store";
-import { NO_REPO, repoOfPath, resolveRepos } from "../where";
+import { checkoutOf, NO_REPO, repoOfPath, resolveRepos } from "../where";
 
 const AT = "2026-09-27T12:00:00Z";
 
@@ -207,4 +207,28 @@ test("only the file-writing tools' paths count as writes, once each", () => {
   );
   // The second line repeats call m1 but carries a tool call of its own.
   expect(state.written).toEqual(["/src/a/x.ts", "/n.ipynb"]);
+});
+
+test("a repository's name gives its main checkout, the clone named for it first", () => {
+  const { src, alpha, feat } = checkouts();
+  const clone = (folder: string) => {
+    mkdirSync(join(src, folder, ".git"), { recursive: true });
+    writeFileSync(
+      join(src, folder, ".git", "config"),
+      '[remote "origin"]\n\turl = git@github.com:o/tokstat-odi.git\n',
+    );
+    return join(src, folder);
+  };
+  const [odi3, odi5, odi] = [clone("tokstat-odi3"), clone("tokstat-odi5"), clone("tokstat-odi")];
+  // A worktree is its main checkout; a folder in a worktree the same.
+  resolveRepos([join(feat, "src"), alpha]);
+  expect(checkoutOf("alpha")).toBe(alpha);
+  // Only clones with numbers seen: the first of them.
+  resolveRepos([odi5, odi3]);
+  expect(checkoutOf("tokstat-odi")).toBe(odi3);
+  // The one named for the repository once seen, whichever was seen first.
+  resolveRepos([odi]);
+  expect(checkoutOf("tokstat-odi")).toBe(odi);
+  // None here: a cloud-only repository.
+  expect(checkoutOf("tokstat-nowhere")).toBeNull();
 });

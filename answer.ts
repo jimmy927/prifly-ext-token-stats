@@ -115,7 +115,8 @@ export class Answerer {
     return { from: start, byAccount };
   }
 
-  answer(params: QueryParams, now = Date.now()): Answer {
+  /** The stretch a query covers: its calls, and the buckets they fall in. */
+  private stretch(params: QueryParams) {
     const rows = filtered(this.cols, params.filters);
     const tzMs = params.tz * 60_000;
     // Nothing before the first call: "all time" starts there, not in 1970.
@@ -134,6 +135,33 @@ export class Answerer {
       const ts = this.cols.ts[i] ?? 0;
       return ts >= start && ts < to;
     });
+    return { rows, tzMs, from, to, bucket, start, buckets, inRange };
+  }
+
+  /**
+   * The cost per bucket by `params.split`, one series to each value (none is
+   * left to "N more" with a large `top`), and the table: the chart's data
+   * without the rest of `answer`, for the Code view.
+   */
+  spend(params: QueryParams) {
+    const { tzMs, from, to, bucket, buckets, inRange } = this.stretch(params);
+    return {
+      from,
+      to,
+      bucket,
+      buckets,
+      series: this.series(inRange, params, bucket, buckets, tzMs),
+      rows: this.table(inRange, params.split),
+    };
+  }
+
+  /** Every value of a dimension the calls have, by all-time cost, biggest first. */
+  values(dim: Dimension): string[] {
+    return this.facets("cost")[dim].map((f) => f.key);
+  }
+
+  answer(params: QueryParams, now = Date.now()): Answer {
+    const { rows, tzMs, from, to, bucket, start, buckets, inRange } = this.stretch(params);
     return {
       from,
       to,

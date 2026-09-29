@@ -118,6 +118,25 @@ first arrives within 5 minutes".
 prifly the Forecast view says to update prifly, and the Usage view works as
 before.
 
+## Code
+
+The **View** switch also has **Code**: does the spend turn into code? It
+shows token spend and the **lines of code added** on one time axis, for all
+repositories or one, with the dollars each thousand lines cost. The range and
+bucket controls are shared with Usage; the Usage-only splits, measures and
+filters hide.
+
+- A row with a **Repository** selector (all, or one) and a **Split by repo**
+  toggle, which gives each chart a line per repository.
+- Three tiles: **Spend**, **Lines added** and **$ per 1k lines**.
+- Two charts, **Token spend per bucket** and **Lines added per bucket**, on the
+  same buckets. Zooming, going back and panning act on both.
+- A table per repository: spend, lines added, $ per 1k lines, share of spend
+  and share of lines. Double-click a row to show only that repository.
+- A repository with spend and no checkout on this machine (a cloud-only one)
+  shows its spend and "—" for lines; the $ per 1k lines leaves its spend out.
+- Only lines added are counted: no commits, deletions or net size.
+
 ## Model colours
 
 Split by model, each family has one hue and each version a shade of it:
@@ -237,6 +256,21 @@ counted once, by its message id.
   into no repository shows as **(no repository)**. The parts of a split call
   add up to it, so every total is unchanged; the Folder split still shows
   the session's own folder.
+- **Git history** (Code view) is read from each repository's main checkout,
+  found by the repository's name (of several clones, the folder named for it
+  first; a repository never seen as a folder is looked for in `~/src/<name>`).
+  Only the default branch counts (`origin/HEAD`, else `main`, else `master`),
+  merges left out, a commit dated by its committer time. Lines added count in
+  code files only (`code-filter.ts`): lockfiles, `.md`, `.json`, `.jsonl`,
+  `.yml`/`.yaml`, `.txt`, `.csv`, `.svg`, `.lock`, `.log`, `.min.js` and files
+  under `migrations/`, `vendor/`, `node_modules/`, `dist/` or `fixtures/` are
+  left out, matched by extension and whole folder name, and binary files add
+  nothing. `git log` runs on every local scan and on Read again; the results
+  are kept in `cache/git.json` and, where the last branch tip is still in the
+  branch's history, only the commits since are read. A force-push, a changed
+  default branch or a change to the filter (`FILTER_VERSION`) reads the
+  repository again. The first read of a long history takes seconds (odi's
+  20,000 commits, about 15 s).
 
 ## Install
 

@@ -1,0 +1,49 @@
+/* The Code view (code.js): spend and lines of code added, on one time axis.
+   Loaded after forecast.css, whose `.tiles` and `.tile` it borrows. */
+.code {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.code[hidden] {
+  display: none;
+}
+.code .bar .note {
+  flex: 1;
+  min-width: 0;
+}
+.field.check {
+  cursor: pointer;
+}
+.field.check input {
+  margin: 0;
+  accent-color: var(--fg);
+}
+.panel-head.code-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+.code-chart {
+  height: 200px;
+  position: relative;
+  user-select: none;
+}
+.code .legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 340px;
+}
+.code .legend span span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.code tr.row.chosen td {
+  background: var(--accent);
+}
+.code th[data-key] {
+  cursor: pointer;
+}

@@ -72,6 +72,12 @@ function guessRepo(cwd: string): string {
  */
 function nameOf(top: string): string {
   if (top === HOME) return "~";
+  const name = originName(top);
+  noteCheckout(name, top);
+  return name;
+}
+
+function originName(top: string): string {
   try {
     const config = readFileSync(join(top, ".git", "config"), "utf8");
     const origin = /\[remote "origin"\][^[]*?url\s*=\s*(\S+)/.exec(config)?.[1];
@@ -80,6 +86,36 @@ function nameOf(top: string): string {
     // No config to read: the folder's name is the best there is.
   }
   return basename(top);
+}
+
+/** The main checkouts seen for each repository name, in this thread. */
+const CHECKOUTS = new Map<string, Set<string>>();
+
+function noteCheckout(name: string, top: string): void {
+  const known = CHECKOUTS.get(name);
+  if (known === undefined) CHECKOUTS.set(name, new Set([top]));
+  else known.add(top);
+}
+
+/**
+ * The main checkout of a repository by name, for reading its git history;
+ * null where this machine has none. Of several clones of one repository
+ * (`~/src/odi`, `odi3`, `odi5`) the one whose folder is the bare name; else
+ * the first by path. A repository never seen as a folder here (a session
+ * outside it only wrote into it, or a cloud session ran in it) is looked for
+ * at `~/src/<name>`, when that has this name as its origin.
+ */
+export function checkoutOf(name: string): string | null {
+  const found = new Set(CHECKOUTS.get(name));
+  const conventional = join(HOME, "src", name);
+  if (existsSync(join(conventional, ".git")) && originName(conventional) === name) {
+    found.add(conventional);
+  }
+  const rank = (path: string) => Number(basename(path) !== name);
+  const best = [...found]
+    .filter((path) => existsSync(join(path, ".git")))
+    .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : 1));
+  return best[0] ?? null;
 }
 
 /** A folder that still exists, by its git origin; null for one that is gone or unreadable. */
