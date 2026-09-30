@@ -9,7 +9,7 @@
  * and `api/status` for how far the reading has got.
  *
  * The Code view asks `api/code`: the same spend beside the lines of code each
- * repository's default branch gained (`git.ts`), read on every local scan.
+ * repository's default branch gained (`git.ts`), read on the local scans that follow the Code view's first request.
  *
  * The Forecast view asks `api/forecast`: prifly's account limits, read every
  * 5 minutes into `readings.ts` and turned into runways by `forecast.ts`.
@@ -52,6 +52,8 @@ type Running = {
   log: ExtensionApi["log"];
   git: GitLines;
   gitReading: Promise<void> | null;
+  /** Whether the Code view has asked this run: git is not read for a panel nobody opened. */
+  codeAsked: boolean;
   /**
    * The host's `accounts()`, or null on a prifly from before it had one: the
    * Forecast view then says to update prifly.
@@ -117,7 +119,7 @@ function received(state: Running, reply: ScanReply, log: ExtensionApi["log"]): v
   state.scanning = null;
   state.resolveScan?.();
   state.resolveScan = null;
-  void readGit(state);
+  if (state.codeAsked) void readGit(state);
 }
 
 async function scanRemote(state: Running): Promise<void> {
@@ -205,6 +207,7 @@ export function activate(api: ExtensionApi): () => void {
     log: api.log,
     git: new GitLines(join(api.folder, "cache", "git.json")),
     gitReading: null,
+    codeAsked: false,
     // A host older than the contract's `accounts()` has no such function.
     accounts: typeof api.accounts === "function" ? () => api.accounts() : null,
   };
@@ -264,6 +267,11 @@ export async function panel(_panelId: string, request: PanelRequest): Promise<un
       return forecastAnswer(state, request.query);
     case "code": {
       if (state.lastScan === null) await scanLocal(state);
+      state.codeAsked = true;
+      // With a history on hand the read is incremental, and cheap where nothing moved: wait for
+      // it, so the answer is current. Without one it is long: answer "not ready" and let the page retry.
+      if (state.git.ready()) await readGit(state);
+      else void readGit(state);
       return codeAnswer(answerer(state), state.git, readCodeParams(request.query, Date.now()));
     }
     case "stats": {

@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 import { FILTER_VERSION } from "./code-filter";
 import { type Commit, commitsIn, defaultBranch, GitFailed, isAncestor, tipOf } from "./git";
+import { stampOf } from "./git-stamp";
 import type { ExtensionApi } from "./prifly-api";
 
 const CACHE_VERSION = 1;
@@ -63,6 +64,11 @@ export type LinesSource = {
 export class GitLines implements LinesSource {
   private repos = new Map<string, RepoLines>();
   private readThisRun = false;
+  /**
+   * What each checkout's git files looked like (`git-stamp.ts`) just before it
+   * was last read. In memory only: a restart reads every repository once.
+   */
+  private stamps = new Map<string, { path: string; stamp: string }>();
 
   private readonly file: string;
 
@@ -121,6 +127,18 @@ export class GitLines implements LinesSource {
 
   /** True when the repository's lines changed. */
   private async refreshOne(name: string, path: string): Promise<boolean> {
+    const before = this.repos.get(name);
+    const stamp = stampOf(path, before?.path === path ? before.branch : null);
+    const last = this.stamps.get(name);
+    if (stamp !== null && last?.path === path && last.stamp === stamp) return false;
+    const changed = await this.readRepo(name, path);
+    // Set after the read, from the fingerprint taken before it: a change during it shows next time.
+    if (stamp === null) this.stamps.delete(name);
+    else this.stamps.set(name, { path, stamp });
+    return changed;
+  }
+
+  private async readRepo(name: string, path: string): Promise<boolean> {
     const branch = await defaultBranch(path);
     const head = branch === null ? null : await tipOf(path, branch);
     if (branch === null || head === null) return this.repos.delete(name);
