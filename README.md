@@ -150,7 +150,9 @@ shared with Usage; the Usage-only splits, measures and filters hide.
   place of the dollars.
 - A table per repository: spend, lines added, $ per 1k lines, active time,
   hours per 1k lines, share of spend and share of lines. Double-click a row to
-  show only that repository.
+  show only that repository. A repository with active time but no spend or
+  lines in the stretch (a cloud session with no repository, "unknown") has a
+  row too.
 - A repository with spend and no checkout on this machine (a cloud-only one)
   shows its spend and "—" for lines; the $ per 1k lines and hours per 1k
   lines leave its spend and time out.
@@ -164,8 +166,10 @@ alone:
   command, an interrupt, your answer to an `AskUserQuestion`, a tool call you
   refused, and a prompt you queued while Claude was working (a
   `queue-operation` enqueue: those have no user line of their own). Not a
-  meta line, a compaction's summary, a tool's result, or a line that begins
-  `<task-notification`, `<local-command-stdout`, `Caveat:`,
+  meta line, a compaction's summary, a tool's result (a refusal only when it
+  is Claude Code's own error result, not a file that quotes its words), or a
+  line that begins `<task-notification`, `<local-command-stdout`,
+  `<local-command-caveat`, `<bash-stdout`, `<bash-stderr`, `Caveat:`,
   `<prifly-notice` or `<system-reminder` (`parse.ts`).
 - Every session's events go on **one timeline**: you are one person switching
   between sessions. Before each event, its **lead** — the time since its

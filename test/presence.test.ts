@@ -37,10 +37,19 @@ const reply = (minutes: number, id: string, tools: { id: string; name: string }[
       usage: { input_tokens: 1, output_tokens: 1 },
     },
   });
-const result = (minutes: number, toolUseId: string, content: string) =>
-  user(minutes, [{ type: "tool_result", tool_use_id: toolUseId, content }], {
-    toolUseResult: { any: "thing" },
-  });
+const result = (minutes: number, toolUseId: string, content: unknown, isError = false) =>
+  user(
+    minutes,
+    [
+      {
+        type: "tool_result",
+        tool_use_id: toolUseId,
+        content,
+        ...(isError ? { is_error: true } : {}),
+      },
+    ],
+    { toolUseResult: { any: "thing" } },
+  );
 const queue = (minutes: number, operation: string, content?: string) =>
   JSON.stringify({
     type: "queue-operation",
@@ -65,6 +74,8 @@ test("typed prompts, slash commands and interrupts are the reader's; machine voi
       user(3, [{ type: "text", text: "[Request interrupted by user]" }]),
       user(4, "<task-notification>done</task-notification>"),
       user(5, "<local-command-stdout>x</local-command-stdout>"),
+      user(5.1, "<local-command-caveat>Caveat: x</local-command-caveat>"),
+      user(5.2, "<bash-stdout>x</bash-stdout><bash-stderr></bash-stderr>"),
       user(6, "Caveat: the messages below"),
       user(7, "<prifly-notice>x</prifly-notice>"),
       user(8, "  <system-reminder>x</system-reminder>"),
@@ -92,11 +103,29 @@ test("an answer to AskUserQuestion and a refused call count; other tool results 
     // Answered once: a second result for it is not another answer.
     result(4, "toolu_ask", "again"),
     reply(5, "m2", [{ id: "toolu_edit", name: "Edit" }]),
-    result(5.5, "toolu_edit", "The user doesn't want to proceed with this tool use."),
+    result(5.5, "toolu_edit", "The user doesn't want to proceed with this tool use.", true),
+    // A Read or Grep of a file that quotes the refusal is not one, error or not.
+    reply(6, "m3", [{ id: "toolu_read", name: "Read" }]),
+    result(6.5, "toolu_read", 'const REFUSED = "doesn\'t want to proceed";'),
+    result(
+      6.6,
+      "toolu_grep",
+      [{ type: "text", text: "x: The user doesn't want to proceed" }],
+      true,
+    ),
+    // The refusal as a list of text blocks.
+    reply(7, "m4", [{ id: "toolu_bash2", name: "Bash" }]),
+    result(
+      7.5,
+      "toolu_bash2",
+      [{ type: "text", text: "The user doesn't want to proceed with this tool use." }],
+      true,
+    ),
   ];
   expect(events(...lines)).toEqual([
     [3, 2],
     [5.5, 0.5],
+    [7.5, 0.5],
   ]);
   // The question is remembered across chunks: its answer may come in the next scan.
   const state = freshState();

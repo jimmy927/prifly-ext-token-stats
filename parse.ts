@@ -129,8 +129,24 @@ const asRecord = (value: unknown): Line | null =>
 const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
 const str = (value: unknown) => (typeof value === "string" ? value : "");
 
-/** A tool result that says the reader refused the call. */
+/** What a tool result says when the reader refused the call: a cheap test for `interesting`. */
 const REFUSED = "doesn't want to proceed";
+/** How Claude Code's own refusal result begins. */
+const REFUSAL = "The user doesn't want to proceed with this tool use";
+
+/**
+ * Whether a tool result is Claude Code's refusal: an error whose text begins
+ * with it. A result that only quotes the words (a Read or Grep of a file that
+ * holds them) is not.
+ */
+function refusal(block: Line): boolean {
+  if (block["is_error"] !== true) return false;
+  const content = block["content"];
+  const text = Array.isArray(content)
+    ? str(content.map(asRecord).find((part) => part?.["type"] === "text")?.["text"])
+    : str(content);
+  return text.trimStart().startsWith(REFUSAL);
+}
 
 /**
  * Lines worth parsing: the rest are skipped without `JSON.parse`, which is
@@ -175,6 +191,9 @@ function promptOf(line: Line): string {
 const NOT_TYPED = [
   "<task-notification",
   "<local-command-stdout",
+  "<local-command-caveat",
+  "<bash-stdout",
+  "<bash-stderr",
   "Caveat:",
   "<prifly-notice",
   "<system-reminder",
@@ -219,7 +238,7 @@ function blocksAreHuman(state: ReaderState, line: Line, blocks: (Line | null)[])
       state.asks.splice(at, 1);
       return true;
     }
-    if (JSON.stringify(block["content"] ?? "").includes(REFUSED)) return true;
+    if (refusal(block)) return true;
   }
   if (line["toolUseResult"] !== undefined) return false;
   const text = blocks.find((block) => block?.["type"] === "text");
