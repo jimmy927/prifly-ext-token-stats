@@ -176,10 +176,16 @@ export function freeResetSummary(accounts, pool) {
   return `${head} Used as each runs dry they cover <b>${Math.round(pool.coveredHours)}</b> of their <b>${Math.round(pool.dryHours)}</b> dry account-hours — the pool's gap drops from <b>${Math.round(pool.poolDryHours)}</b> to <b>${Math.round(pool.poolDryHoursAfter)}</b>.</span>`;
 }
 
+/** Under a stale account's name: its bars are the last reading's, not a current one. "" for a read account, or one with no reading. */
+export function staleNote(a) {
+  if (!a.stale || a.weekly === null) return "";
+  return `<span class="small">limits not read now — last reading ${when(a.weekly.readAt)} CET</span>`;
+}
+
 function runwayRow(a, i) {
   const next = a.startsNewSessions ? ' <span class="fc-tag next">new sessions</span>' : "";
   const free = hasFree(a);
-  const who = `<td><span class="who"><i class="sw" style="background:${colourOf(i)}"></i>${esc(a.label)}${next}</span>${free ? freeResetChip(a) : ""}</td>`;
+  const who = `<td><span class="who"><i class="sw" style="background:${colourOf(i)}"></i>${esc(a.label)}${next}</span>${free ? freeResetChip(a) : ""}${staleNote(a)}</td>`;
   const w = a.weekly;
   const cls = free ? "row fr-row" : "row";
   if (w === null)

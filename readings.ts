@@ -36,8 +36,17 @@ export type AccountMeta = {
   email: string;
   label: string;
   startsNewSessions: boolean;
-  /** Each followed window's length, from its limit; absent when the account has no such limit. */
+  /**
+   * Each followed window's length, from its limit; absent when the account has
+   * never had such a limit. An answer with none (a failed read) keeps the last
+   * one known, so the stored readings still make a forecast.
+   */
   windowMs: Partial<Record<Window, number>>;
+  /**
+   * The answer carried no limits now (a failed read) while readings are stored:
+   * the row is drawn from the last reading, not a current one.
+   */
+  stale: boolean;
   /** Its free resets ("Reset for free", claude.ai Settings → Usage); null with none. */
   freeResets: AccountFreeReset | null;
 };
@@ -92,15 +101,23 @@ export class Readings {
 
   /** Take what `accounts()` answered; returns how many readings were added. */
   take(accounts: AccountInfo[], now: number): number {
-    this.accounts = accounts.map((account) => ({
-      email: account.email,
-      label: account.label,
-      startsNewSessions: account.startsNewSessions,
-      windowMs: Object.fromEntries(
-        account.limits.filter((l) => isWindow(l.label)).map((l) => [l.label, l.windowMs]),
-      ),
-      freeResets: account.freeResets,
-    }));
+    const before = new Map(this.accounts.map((meta) => [meta.email, meta]));
+    this.accounts = accounts.map((account) => {
+      const followed = account.limits.filter((l) => isWindow(l.label));
+      const windowMs: AccountMeta["windowMs"] = {
+        ...before.get(account.email)?.windowMs,
+        ...Object.fromEntries(followed.map((l) => [l.label, l.windowMs])),
+      };
+      return {
+        email: account.email,
+        label: account.label,
+        startsNewSessions: account.startsNewSessions,
+        windowMs,
+        // As answered: null is also how prifly says "none", so a kept one could outlive its grant.
+        freeResets: account.freeResets,
+        stale: (account.readAt === null || followed.length === 0) && this.latest.has(account.email),
+      };
+    });
     const added: Reading[] = [];
     for (const account of accounts) {
       if (account.readAt === null || account.readAt <= this.latestOf(account.email)) continue;

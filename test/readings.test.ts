@@ -74,6 +74,7 @@ test("only a newer readAt is appended, one reading per followed limit", () => {
       startsNewSessions: true,
       windowMs: { "5h": 5 * 3.6e6, "7d": 7 * DAY },
       freeResets: null,
+      stale: false,
     },
   ]);
   // A second store over the same file has the same readings, and still appends only newer ones.
@@ -102,4 +103,24 @@ test("a day past the retention, a take rewrites the file without the old reading
   readings.take([account(NOW, 20)], NOW);
   expect(readings.all().map((r) => r.at)).toEqual([NOW, NOW]);
   expect(readFileSync(file, "utf8").trim().split("\n")).toHaveLength(2);
+});
+
+test("an answer with no limits keeps the window lengths, marks the account stale, and the next good one clears it", () => {
+  const readings = new Readings(fileIn());
+  // Nothing stored yet: an unread account is not stale, it has no readings.
+  readings.take([account(null, 0)], NOW);
+  expect(readings.accounts[0]?.stale).toBe(false);
+  readings.take([account(NOW - 1000, 40)], NOW);
+  expect(readings.accounts[0]?.stale).toBe(false);
+  // A failed read: readAt null and limits [].
+  expect(readings.take([account(null, 0)], NOW)).toBe(0);
+  expect(readings.accounts[0]?.windowMs).toEqual({ "5h": 5 * 3.6e6, "7d": 7 * DAY });
+  expect(readings.accounts[0]?.stale).toBe(true);
+  // Still failing: the lengths stay.
+  readings.take([account(null, 0)], NOW);
+  expect(readings.accounts[0]?.windowMs["7d"]).toBe(7 * DAY);
+  // A good answer: stale cleared.
+  readings.take([account(NOW, 41)], NOW);
+  expect(readings.accounts[0]?.stale).toBe(false);
+  expect(readings.accounts[0]?.windowMs["7d"]).toBe(7 * DAY);
 });

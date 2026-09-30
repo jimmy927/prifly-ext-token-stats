@@ -114,7 +114,10 @@ limits of each account whose reading is new to `cache/readings.jsonl`
 (`readings.ts`). Readings older than 30 days are dropped. So a rate needs an
 hour of readings after the extension starts, and the daily burn fills in over
 the days after: an account with no readings yet says "No readings yet — the
-first arrives within 5 minutes".
+first arrives within 5 minutes". When a limit read fails, prifly briefly
+answers with no limits for the account; the extension keeps the window
+lengths it knew and draws the row from the stored readings, with a note
+under its name, "limits not read now — last reading …", until a read succeeds.
 
 **It needs a prifly with `accounts()`** in its extension contract. On an older
 prifly the Forecast view says to update prifly, and the Usage view works as

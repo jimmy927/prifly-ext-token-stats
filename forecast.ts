@@ -101,6 +101,8 @@ export type AccountForecast = {
   startsNewSessions: boolean;
   /** Its free resets ("Reset for free", claude.ai Settings → Usage); null with none. */
   freeResets: AccountFreeReset | null;
+  /** The limits were not read in the latest answer: `weekly` and `session` come from the last readings. */
+  stale: boolean;
   /** What using a free reset when the account runs dry does; null without one, or without a rate. */
   freeResetEffect: FreeResetEffect | null;
   /** null before the first reading. */
@@ -432,6 +434,7 @@ function accountLines(
     label: meta.label,
     startsNewSessions: meta.startsNewSessions,
     freeResets: meta.freeResets,
+    stale: meta.stale,
     freeResetEffect: freeResetEffect(meta.freeResets, weekly, now),
     weekly,
     session,

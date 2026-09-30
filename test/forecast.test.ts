@@ -126,6 +126,7 @@ test("a spent account read at 100 for 1.7 h burns at the rate it ran out, and fa
     label: "a",
     startsNewSessions: false,
     windowMs: { "7d": WEEK, "5h": 5 * HOUR },
+    stale: false,
     freeResets: null,
   };
   const answer = forecast(readings, [meta], NOW, new Map([["a@x.com", hitAt]]));
@@ -198,6 +199,7 @@ test("every account is forecast at the average rate, its own shown beside it", (
     label: email,
     startsNewSessions: false,
     windowMs: { "7d": WEEK, "5h": 5 * HOUR },
+    stale: false,
     freeResets: null,
   });
   const reset = NOW + 100 * HOUR;
@@ -227,6 +229,7 @@ test("the pool counts what each account has left, an account with no rate of its
     label: email,
     startsNewSessions: false,
     windowMs: { "7d": WEEK, "5h": 5 * HOUR },
+    stale: false,
     freeResets: null,
   });
   const reset = NOW + 50 * HOUR;
@@ -353,6 +356,7 @@ test("no free reset, none left, or no rate gives no effect, and the pool ignores
     label: email,
     startsNewSessions: false,
     windowMs: { "7d": WEEK, "5h": 5 * HOUR },
+    stale: false,
     freeResets,
   });
   const readings = [
@@ -374,4 +378,24 @@ test("no free reset, none left, or no rate gives no effect, and the pool ignores
     poolDryHoursAfter: 30,
   });
   expect(freeResetPool(one.accounts)).toEqual(one.freeResetPool);
+});
+
+test("a stale account is still forecast from its last readings and says so", () => {
+  const meta = (stale: boolean): AccountMeta => ({
+    email: "a@x.com",
+    label: "a@x.com",
+    startsNewSessions: false,
+    windowMs: { "7d": WEEK, "5h": 5 * HOUR },
+    stale,
+    freeResets: null,
+  });
+  const reset = NOW + 100 * HOUR;
+  const readings = [wk(-10, 10, reset), wk(0, 20, reset)];
+  const fresh = forecast(readings, [meta(false)], NOW, new Map()).accounts[0];
+  const stale = forecast(readings, [meta(true)], NOW, new Map()).accounts[0];
+  expect(fresh?.stale).toBe(false);
+  expect(stale?.stale).toBe(true);
+  expect(stale?.weekly).not.toBeNull();
+  expect(stale?.weekly?.percent).toBe(20);
+  expect(stale?.weekly).toEqual(fresh?.weekly ?? null);
 });

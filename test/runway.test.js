@@ -7,7 +7,9 @@ import {
   freeResetCovers,
   freeResetSummary,
   runwayBanner,
+  staleNote,
 } from "../panel/forecast.js";
+import { clockName } from "../panel/format.js";
 
 const w = (outcome, dryHours, ratePerHour, rateFrom) => ({
   outcome,
@@ -179,4 +181,13 @@ test("with weekly windows from the transcripts the header and note say the chart
   );
   expect(poolNote).toContain("its band the sum of theirs");
   expect(burndownNote("accounts", guessed)).not.toContain("its band the sum of theirs");
+});
+
+test("a stale account's row says it is from its last reading; a read one or one with none says nothing", () => {
+  const at = Date.UTC(2026, 8, 30, 15, 39);
+  expect(staleNote({ stale: false, weekly: { readAt: at } })).toBe("");
+  expect(staleNote({ stale: true, weekly: null })).toBe("");
+  const note = staleNote({ stale: true, weekly: { readAt: at } });
+  expect(note).toContain("limits not read now — last reading");
+  expect(note).toContain(`${clockName(at)} CET`);
 });
