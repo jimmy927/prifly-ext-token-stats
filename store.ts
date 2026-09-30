@@ -10,9 +10,14 @@
  * repository, its counts and cost scaled by its `share`, so the parts add up
  * to the call. A transcript that wrote into none leaves its call whole, in
  * `NO_REPO`.
+ *
+ * Beside the calls, the reader's active time (`Presence`): each present
+ * stretch placed in a repository the same way, by the folder and writes of
+ * the session the reader replied to next.
  */
 
-import type { Usage } from "./parse";
+import type { HumanEvent, Usage } from "./parse";
+import { presenceStretches, type TimelineEvent } from "./presence";
 import { costOf, type Price, priceOf } from "./prices";
 import { folderLabel, NO_REPO, resolveRepos } from "./where";
 
@@ -29,6 +34,23 @@ export type Batch = {
   usages: readonly Usage[];
   /** Files the transcript wrote, by repository: where its calls made in no repository go. */
   writes?: Readonly<Record<string, number>>;
+  /** The reader's events in a session's own transcript: the active time (`presence.ts`). */
+  human?: readonly HumanEvent[];
+};
+
+/**
+ * The reader's present stretches (`presence.ts`), a row per stretch and
+ * repository: its weight already scaled by the repository's share, as a
+ * call's counts are.
+ */
+export type Presence = {
+  length: number;
+  from: Float64Array;
+  to: Float64Array;
+  weight: Float64Array;
+  /** Codes into `names`, the repositories' names. */
+  repo: Int32Array;
+  names: string[];
 };
 
 export type Columns = {
@@ -54,6 +76,8 @@ export type Columns = {
   prices: (Price | null)[];
   /** A session's words, by session id: its title. */
   titles: Map<string, string>;
+  /** When the reader was in front of Claude, and for which repository. */
+  presence: Presence;
 };
 
 class Interner {
@@ -156,10 +180,54 @@ class Filler {
   }
 }
 
+/**
+ * Every session's events on one timeline, each owned by where a call made
+ * then and there would go: its folder's repository, or else its
+ * transcript's writes. The present stretches that follow, a row per place.
+ */
+function presenceOf(all: readonly Batch[], repos: ReadonlyMap<string, string>): Presence {
+  const owners: (readonly Place[])[] = [];
+  const events: TimelineEvent[] = [];
+  for (const batch of all) {
+    if (batch.human === undefined || batch.human.length === 0) continue;
+    const shares = sharesOf(batch.writes);
+    for (const event of batch.human) {
+      const owner = owners.push(placesOf(batch, event.cwd, repos, shares)) - 1;
+      events.push({ ts: event.ts, lead: event.lead, owner });
+    }
+  }
+  const stretches = presenceStretches(events);
+  const length = stretches.reduce((n, s) => n + (owners[s.owner]?.length ?? 0), 0);
+  const names = new Interner();
+  const out: Presence = {
+    length,
+    from: new Float64Array(length),
+    to: new Float64Array(length),
+    weight: new Float64Array(length),
+    repo: new Int32Array(length),
+    names: names.names,
+  };
+  let i = 0;
+  for (const stretch of stretches) {
+    for (const [repo, share] of owners[stretch.owner] ?? []) {
+      out.from[i] = stretch.from;
+      out.to[i] = stretch.to;
+      out.weight[i] = stretch.weight * share;
+      out.repo[i] = names.code(repo);
+      i++;
+    }
+  }
+  return out;
+}
+
 export function buildColumns(batches: Iterable<Batch>): Columns {
   const all = [...batches];
   const repos = resolveRepos(
-    all.flatMap((batch) => (batch.repo === null ? batch.usages.map((u) => u.cwd) : [])),
+    all.flatMap((batch) =>
+      batch.repo === null
+        ? [...batch.usages.map((u) => u.cwd), ...(batch.human ?? []).map((e) => e.cwd)]
+        : [],
+    ),
   );
   const places = all.map((batch) => {
     const shares = sharesOf(batch.writes);
@@ -179,5 +247,6 @@ export function buildColumns(batches: Iterable<Batch>): Columns {
     DIMENSIONS.map((dim) => [dim, filler.interners[dim].names]),
   ) as Record<Dimension, string[]>;
   const prices = names.model.map((model) => filler.priceFor(model));
-  return { length, codes: filler.codes, names, titles, prices, ...filler.cols };
+  const presence = presenceOf(all, repos);
+  return { length, codes: filler.codes, names, titles, prices, presence, ...filler.cols };
 }

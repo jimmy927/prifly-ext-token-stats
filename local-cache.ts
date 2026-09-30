@@ -28,7 +28,11 @@ export type FileState = FileOut & {
   reader: ReaderState;
 };
 
-/** A file's row without its calls. */
+/**
+ * A file's row without its calls. Its refusals and the reader's events stay
+ * in it, rewritten with the row: a session has a call per step and an event
+ * only per reply, too few to be worth chunks of their own.
+ */
 type Position = Omit<FileState, "usages">;
 
 /** What the database holds for one file, to tell what a scan changed. */

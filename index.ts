@@ -71,6 +71,7 @@ function localBatches(state: Running): Batch[] {
     repo: null,
     usages: file.usages,
     ...(file.writes === undefined ? {} : { writes: file.writes }),
+    ...(file.human === undefined ? {} : { human: file.human }),
   }));
 }
 

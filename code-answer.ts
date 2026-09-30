@@ -8,6 +8,10 @@
  * what a session wrote (`store.ts`). Lines are the default branch's commits
  * (`git.ts`), placed in a bucket by their committer time. A repository with
  * spend and no checkout on this machine has no lines: `null`, shown as "—".
+ *
+ * Beside them, the reader's active time (`presence.ts`): the hours in front
+ * of Claude, per repository of the session replied to next, on the same
+ * buckets, and the hours each thousand lines took.
  */
 
 import { type Answerer, type Row, readParams, type Series } from "./answer";
@@ -34,6 +38,10 @@ export type CodeRow = {
   lines: number | null;
   /** Dollars per 1,000 lines; null without lines. */
   perK: number | null;
+  /** The reader's active hours in the stretch. */
+  hours: number;
+  /** Active hours per 1,000 lines; null without lines. */
+  hoursPerK: number | null;
   /** Its part of all repositories' spend and lines, 0 to 1. */
   shareSpend: number;
   shareLines: number | null;
@@ -48,15 +56,28 @@ export type CodeAnswer = {
   byRepo: boolean;
   /** Every repository there is spend or lines for, biggest spend first. */
   repos: string[];
-  /** The two charts' series: the same keys in the same order, so a repository keeps its colour. */
+  /** The three charts' series: the same keys in the same order, so a repository keeps its colour. */
   cost: Series[];
   lines: Series[];
+  /** Active hours per bucket. */
+  hours: Series[];
   /** Dollars per 1,000 lines over a trailing day, for all shown repositories together (`per-k.ts`). */
   perK: RatioSeries;
   /** The same, one line to each of the repositories with the most spend that added lines. */
   perKByRepo: RatioSeries[];
-  /** The shown repository's, or all repositories'; `perK` counts only spend that has lines to it. */
-  totals: { spend: number; lines: number; perK: number | null };
+  /** Active hours per 1,000 lines over a trailing day, for all shown repositories together. */
+  hoursPerK: RatioSeries;
+  /**
+   * The shown repository's, or all repositories'; `perK` and `hoursPerK`
+   * count only the spend and hours that have lines to them.
+   */
+  totals: {
+    spend: number;
+    lines: number;
+    perK: number | null;
+    hours: number;
+    hoursPerK: number | null;
+  };
   rows: CodeRow[];
   /** False until git has been read once: lines may then be missing. */
   ready: boolean;
@@ -101,13 +122,19 @@ type Entry = {
   tone: string | null;
   cost: number[];
   lines: number[];
+  hours: number[];
 };
 
 /** The largest spend first, then the most lines; the rest by name. */
 const bySize = (a: Entry, b: Entry) =>
   sum(b.cost) - sum(a.cost) || sum(b.lines) - sum(a.lines) || (a.name < b.name ? -1 : 1);
 
-function seriesOf(key: string, label: string, entry: Entry, of: "cost" | "lines"): Series {
+function seriesOf(
+  key: string,
+  label: string,
+  entry: Entry,
+  of: "cost" | "lines" | "hours",
+): Series {
   const values = entry[of];
   return { key, label, slot: entry.slot, tone: entry.tone, values, total: sum(values) };
 }
@@ -119,28 +146,40 @@ function chartSeries(entries: Entry[], byRepo: boolean, top: number, label: stri
   const rest = byRepo ? ranked.slice(top) : ranked;
   const cost: Series[] = shown.map((e) => seriesOf(e.name, e.name, e, "cost"));
   const lines: Series[] = shown.map((e) => seriesOf(e.name, e.name, e, "lines"));
-  if (rest.length === 0) return { cost, lines };
+  const hours: Series[] = shown.map((e) => seriesOf(e.name, e.name, e, "hours"));
+  if (rest.length === 0) return { cost, lines, hours };
   const together: Entry = {
     name: byRepo ? "\u0000other" : "all",
     slot: byRepo ? -1 : 0,
     tone: null,
     cost: new Array<number>(width).fill(0),
     lines: new Array<number>(width).fill(0),
+    hours: new Array<number>(width).fill(0),
   };
   for (const e of rest) {
     add(together.cost, e.cost);
     add(together.lines, e.lines);
+    add(together.hours, e.hours);
   }
   const name = byRepo ? `${rest.length} more` : label;
   return {
     cost: [...cost, seriesOf(together.name, name, together, "cost")],
     lines: [...lines, seriesOf(together.name, name, together, "lines")],
+    hours: [...hours, seriesOf(together.name, name, together, "hours")],
   };
 }
 
-function rowsOf(spend: readonly Row[], linesOf: Map<string, number | null>): CodeRow[] {
+function rowsOf(
+  spend: readonly Row[],
+  linesOf: Map<string, number | null>,
+  hoursOf: Map<string, number>,
+): CodeRow[] {
   const byName = new Map(spend.map((r) => [r.key, r]));
-  const names = new Set([...byName.keys(), ...[...linesOf].filter(([, n]) => n).map(([k]) => k)]);
+  const names = new Set([
+    ...byName.keys(),
+    ...[...linesOf].filter(([, n]) => n).map(([k]) => k),
+    ...[...hoursOf].filter(([, h]) => h > 0).map(([k]) => k),
+  ]);
   const totalSpend = sum(spend.map((r) => r.cost));
   const totalLines = sum([...linesOf.values()].map((n) => n ?? 0));
   return [...names]
@@ -148,6 +187,7 @@ function rowsOf(spend: readonly Row[], linesOf: Map<string, number | null>): Cod
       const row = byName.get(key);
       const lines = linesOf.get(key) ?? null;
       const cost = row?.cost ?? 0;
+      const hours = hoursOf.get(key) ?? 0;
       return {
         key,
         label: key,
@@ -156,6 +196,8 @@ function rowsOf(spend: readonly Row[], linesOf: Map<string, number | null>): Cod
         spend: cost,
         lines,
         perK: lines !== null && lines > 0 ? (cost / lines) * 1000 : null,
+        hours,
+        hoursPerK: lines !== null && lines > 0 ? (hours / lines) * 1000 : null,
         shareSpend: totalSpend > 0 ? cost / totalSpend : 0,
         shareLines: lines !== null && totalLines > 0 ? lines / totalLines : null,
       };
@@ -184,12 +226,18 @@ export function codeAnswer(answerer: Answerer, git: LinesSource, params: CodePar
       tone,
       cost: new Array<number>(count).fill(0),
       lines: new Array<number>(count).fill(0),
+      hours: new Array<number>(count).fill(0),
     };
     entries.set(name, entry);
     return entry;
   };
   for (const s of spend.series) entryOf(s.key, s.slot, s.tone).cost = s.values;
   for (const row of spend.rows) stretchLines.set(row.key, null);
+  const stretchHours = new Map<string, number>();
+  for (const [name, values] of answerer.activeHours(start, bucket, count)) {
+    stretchHours.set(name, sum(values));
+    if (sum(values) > 0) entryOf(name, -1, null).hours = values;
+  }
   for (const [name, list] of commits) {
     const values = bucketLines(list, start, to, bucket, count, tzMs);
     stretchLines.set(name, sum(values));
@@ -201,25 +249,24 @@ export function codeAnswer(answerer: Answerer, git: LinesSource, params: CodePar
   const chosen = [...entries.values()].filter(
     (e) => params.repo === null || e.name === params.repo,
   );
-  const charts = chartSeries(
-    chosen,
-    params.byRepo,
-    params.top,
-    params.repo ?? "All repositories",
-    count,
-  );
-  const ratios = perKSeries(
-    chosen.filter((e) => git.lines(e.name) !== null),
+  const label = params.repo ?? "All repositories";
+  const charts = chartSeries(chosen, params.byRepo, params.top, label, count);
+  const checkedOut = chosen.filter((e) => git.lines(e.name) !== null);
+  const ratios = perKSeries(checkedOut, bucket, count, params.top, label);
+  // The same trailing window and minimum of lines, with hours where the dollars were.
+  const hoursPerK = perKSeries(
+    checkedOut.map((e) => ({ ...e, cost: e.hours })),
     bucket,
     count,
-    params.top,
-    params.repo ?? "All repositories",
-  );
-  const rows = rowsOf(spend.rows, stretchLines);
+    0,
+    label,
+  ).perK;
+  const rows = rowsOf(spend.rows, stretchLines, stretchHours);
   const shown = rows.filter((r) => params.repo === null || r.key === params.repo);
   const counted = shown.filter((r) => r.lines !== null);
   const lines = sum(counted.map((r) => r.lines ?? 0));
   const countedSpend = sum(counted.map((r) => r.spend));
+  const countedHours = sum(counted.map((r) => r.hours));
   return {
     from: spend.from,
     to,
@@ -230,10 +277,13 @@ export function codeAnswer(answerer: Answerer, git: LinesSource, params: CodePar
     repos: [...new Set([...answerer.values("repo"), ...git.names()])],
     ...charts,
     ...ratios,
+    hoursPerK,
     totals: {
       spend: sum(shown.map((r) => r.spend)),
       lines,
       perK: lines > 0 ? (countedSpend / lines) * 1000 : null,
+      hours: sum(shown.map((r) => r.hours)),
+      hoursPerK: lines > 0 ? (countedHours / lines) * 1000 : null,
     },
     rows,
     ready: git.ready(),

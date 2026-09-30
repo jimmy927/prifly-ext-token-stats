@@ -25,6 +25,13 @@ export function usd(n) {
   return `$${n.toFixed(2)}`;
 }
 
+/** 45 min, 3.2 h, 120 h: a time given in hours. */
+export function hrs(h) {
+  const abs = Math.abs(h);
+  if (abs < 1) return `${Math.round(h * 60)} min`;
+  return `${h.toFixed(abs >= 100 ? 0 : 1)} h`;
+}
+
 let dollars = false;
 
 /** Whether the measure shown is the cost: `val` then writes dollars. */

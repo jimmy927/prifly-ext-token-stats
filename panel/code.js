@@ -1,9 +1,10 @@
-// The Code view: token spend and the lines of code added on the same time
-// axis, for all repositories or one, and a table per repository with the
-// dollars each thousand lines cost. The extension answers at `api/code`.
+// The Code view: token spend, the reader's active time and the lines of code
+// added on the same time axis, for all repositories or one, and a table per
+// repository with the dollars and hours each thousand lines took. The
+// extension answers at `api/code`.
 
 import { drawChart } from "./chart.js";
-import { colours, esc, fmt, rangeName, usd, widthName } from "./format.js";
+import { colours, esc, fmt, hrs, rangeName, usd, widthName } from "./format.js";
 
 /** Kept with the page's other choices (`localStorage["token-stats"].code`). */
 export const codeChoices = { repo: "", byRepo: false };
@@ -19,6 +20,7 @@ const $ = (id) => document.getElementById(id);
 const dash = "—";
 const percent = (share) => (share === null ? dash : `${(share * 100).toFixed(1)}%`);
 const perK = (n) => (n === null ? dash : usd(n));
+const hoursPerK = (n) => (n === null ? dash : hrs(n));
 
 /**
  * `saved` is what the page kept last time. `page` gives what the shared
@@ -105,16 +107,22 @@ function drawSelector() {
 }
 
 function drawTiles() {
-  const { spend, lines, perK: cost } = answer.totals;
+  const { spend, lines, perK: cost, hours, hoursPerK: time } = answer.totals;
   const tile = (k, v, h) =>
     `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h}</div></div>`;
   $("code-tiles").innerHTML = [
     tile("Spend", usd(spend), "At API list prices, in this stretch"),
+    tile("Active time", hrs(hours), "In front of Claude, estimated from your prompts"),
     tile("Lines added", fmt(lines), "Code files, on the default branch"),
     tile(
       "$ per 1k lines",
       perK(cost),
       "Spend of repositories with a checkout here, over their lines",
+    ),
+    tile(
+      "Hours per 1k lines",
+      hoursPerK(time),
+      "Active time of repositories with a checkout here, over their lines",
     ),
   ].join("");
 }
@@ -167,7 +175,8 @@ function drawLegend(colourOf) {
   if (!answer.byRepo) return;
   for (const [i, s] of answer.cost.entries()) {
     const line = answer.lines[i];
-    const text = `${s.label} · ${usd(s.total)} · ${fmt(line?.total ?? 0)} lines`;
+    const time = answer.hours[i];
+    const text = `${s.label} · ${usd(s.total)} · ${hrs(time?.total ?? 0)} · ${fmt(line?.total ?? 0)} lines`;
     legend.appendChild(legendItem(s.key, colourOf.get(s.key), text));
   }
 }
@@ -193,6 +202,13 @@ function drawCharts() {
     );
   chart("code-cost", answer.cost, usd, "Token spend over time", "No spend in this stretch.");
   chart(
+    "code-hours",
+    answer.hours,
+    hrs,
+    "Active hours over time",
+    "No active time in this stretch.",
+  );
+  chart(
     "code-lines",
     answer.lines,
     fmt,
@@ -201,8 +217,11 @@ function drawCharts() {
   );
 }
 
-/** A line chart of dollars per 1,000 lines; `series` without a point draws the `empty` note. */
-function ratioChart(id, series, shades, label) {
+/**
+ * A line chart of dollars (or, with `format` hrs, hours) per 1,000 lines;
+ * `series` without a point draws the `empty` note.
+ */
+function ratioChart(id, series, shades, label, format = usd) {
   const shown = series.filter((s) => s.values.some((v) => v !== null));
   drawChart(
     $(id),
@@ -211,7 +230,7 @@ function ratioChart(id, series, shades, label) {
       series: shown,
       colours: shown.map((s) => shades.get(s.key)),
       kind: "lines",
-      format: usd,
+      format,
       label,
       empty: "Too few lines added in this stretch to price them.",
     },
@@ -222,6 +241,13 @@ function ratioChart(id, series, shades, label) {
 function drawRatios(colourOf) {
   const total = new Map([["all", "var(--fg)"]]);
   ratioChart("code-perk", [answer.perK], total, "Dollars per 1,000 lines over time");
+  ratioChart(
+    "code-hperk",
+    [answer.hoursPerK],
+    total,
+    "Active hours per 1,000 lines over time",
+    hrs,
+  );
   const shades = new Map(
     answer.perKByRepo.map((s) => [s.key, colourOf.get(s.key) ?? "var(--other)"]),
   );
@@ -239,6 +265,8 @@ const COLUMNS = [
   { key: "spend", label: "Spend", show: (r) => usd(r.spend) },
   { key: "lines", label: "Lines added", show: (r) => (r.lines === null ? dash : fmt(r.lines)) },
   { key: "perK", label: "$ per 1k lines", show: (r) => perK(r.perK) },
+  { key: "hours", label: "Active time", show: (r) => hrs(r.hours) },
+  { key: "hoursPerK", label: "Hours per 1k lines", show: (r) => hoursPerK(r.hoursPerK) },
 ];
 
 /** Sorted by the column, biggest first; a missing value last. */

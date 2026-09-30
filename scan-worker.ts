@@ -60,7 +60,8 @@ export type ScanReply = {
 // 2: calls keep their 1-hour cache writes apart, for the cost; older caches are read again.
 // 3: transcripts keep the repositories they wrote into; older caches are read again.
 // 4: transcripts keep their weekly-limit refusals; older caches are read again.
-const CACHE_VERSION = 4;
+// 5: session transcripts keep the reader's own events, for the active time; older caches are read again.
+const CACHE_VERSION = 5;
 const files = new Map<string, FileState>();
 const archive = new Map<string, FileOut>();
 let cache: LocalCache | null = null;
@@ -113,6 +114,12 @@ async function readFile(path: string): Promise<number> {
   countWrites(state);
   const hits = state.reader.hits.splice(0);
   if (hits.length > 0) state.hits = [...(state.hits ?? []), ...hits];
+  // A sub-agent's "user" lines are its parent's prompts and tool results, never the reader's.
+  const human = state.reader.human.splice(0);
+  if (human.length > 0 && state.parentId === null) {
+    state.human ??= [];
+    state.human.push(...human);
+  }
   state.offset += end;
   state.size = stat.size;
   state.mtime = stat.mtimeMs;
@@ -224,6 +231,7 @@ function strip(state: FileState): FileOut {
     usages: state.usages,
     ...(state.writes === undefined ? {} : { writes: state.writes }),
     ...(state.hits === undefined ? {} : { hits: state.hits }),
+    ...(state.human === undefined ? {} : { human: state.human }),
   };
 }
 

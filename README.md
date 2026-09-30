@@ -126,16 +126,18 @@ before.
 ## Code
 
 The **View** switch also has **Code**: does the spend turn into code? It
-shows token spend and the **lines of code added** on one time axis, for all
-repositories or one, with the dollars each thousand lines cost. The range and
-bucket controls are shared with Usage; the Usage-only splits, measures and
-filters hide.
+shows token spend, your **active time** in front of Claude and the **lines of
+code added** on one time axis, for all repositories or one, with the dollars
+and the hours each thousand lines took. The range and bucket controls are
+shared with Usage; the Usage-only splits, measures and filters hide.
 
 - A row with a **Repository** selector (all, or one) and a **Split by repo**
   toggle, which gives each chart a line per repository.
-- Three tiles: **Spend**, **Lines added** and **$ per 1k lines**.
-- Two charts, **Token spend per bucket** and **Lines added per bucket**, on the
-  same buckets. Zooming, going back and panning act on all four charts.
+- Five tiles: **Spend**, **Active time**, **Lines added**, **$ per 1k lines**
+  and **Hours per 1k lines**.
+- Three charts, **Token spend per bucket**, **Active hours per bucket** and
+  **Lines added per bucket**, on the same buckets. Zooming, going back and
+  panning act on all the Code charts.
 - **Dollars per 1,000 lines** over time, for everything shown together, and
   **by repository**, one line each for the repositories with the most spend
   that added lines. Each point is the spend and the lines of the trailing day
@@ -143,11 +145,50 @@ filters hide.
   lumps when a branch reaches the default one, so an hour's ratio alone swings
   wildly. A window with fewer than 100 lines is a gap. Only repositories with
   a checkout here count, as in the tile (`per-k.ts`).
-- A table per repository: spend, lines added, $ per 1k lines, share of spend
-  and share of lines. Double-click a row to show only that repository.
+- **Active hours per 1,000 lines** over time, for everything shown together:
+  the same trailing day and the same 100-line minimum, with active hours in
+  place of the dollars.
+- A table per repository: spend, lines added, $ per 1k lines, active time,
+  hours per 1k lines, share of spend and share of lines. Double-click a row to
+  show only that repository.
 - A repository with spend and no checkout on this machine (a cloud-only one)
-  shows its spend and "—" for lines; the $ per 1k lines leaves its spend out.
+  shows its spend and "—" for lines; the $ per 1k lines and hours per 1k
+  lines leave its spend and time out.
 - Only lines added are counted: no commits, deletions or net size.
+
+How the active time is worked out (`presence.ts`), from the transcripts
+alone:
+
+- A **human event** is a moment you demonstrably acted in a session's own
+  transcript (a sub-agent's never has one): a prompt you typed, a slash
+  command, an interrupt, your answer to an `AskUserQuestion`, a tool call you
+  refused, and a prompt you queued while Claude was working (a
+  `queue-operation` enqueue: those have no user line of their own). Not a
+  meta line, a compaction's summary, a tool's result, or a line that begins
+  `<task-notification`, `<local-command-stdout`, `Caveat:`,
+  `<prifly-notice` or `<system-reminder` (`parse.ts`).
+- Every session's events go on **one timeline**: you are one person switching
+  between sessions. Before each event, its **lead** — the time since its
+  session's previous assistant line, at most 2 minutes, for reading the
+  answer and typing — counts whole. The rest of the stretch between two
+  consecutive events, of any sessions, counts at how often you were really
+  present in a gap that long: up to 2 min 1.00, to 5 min 0.97, to 10 min
+  0.72, to 15 min 0.32, to 30 min 0.09, to 60 min 0.03, and longer nothing.
+- Each present moment goes to the session of the **next** event, the one you
+  replied to next, and so to that session's repository, found as its calls'
+  are (below: its folder's repository, or the repositories its transcript
+  wrote into). Active time is shown per repository and in total only: the
+  next event's session was the right one for only 41% of the hours, but its
+  repository was wrong for only 8%.
+- The weights were fit on 28–30 September 2026 against prifly's own log of
+  when its window had your attention (51.6 hours, 30.8 of them active). A
+  hard cut — gaps up to 10 minutes whole, longer ones not at all — gave
+  31.7 hours, precision 0.95 and recall 0.98; the table is the same fit,
+  smoothed.
+- Remote sessions count too: their transcripts are Claude Code's own lines
+  and go through the same reader. Transcripts archived before events were
+  kept, and remote sessions read before then that have left the API's
+  listing, have no events and add no time.
 
 ## Model colours
 

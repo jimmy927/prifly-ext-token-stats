@@ -4,6 +4,7 @@
  * values each filter can take.
  */
 
+import { spreadHours } from "./presence";
 import {
   autoBucket,
   colourSlots,
@@ -153,6 +154,30 @@ export class Answerer {
       series: this.series(inRange, params, bucket, buckets, tzMs),
       rows: this.table(inRange, params.split),
     };
+  }
+
+  /**
+   * The reader's active hours per bucket by repository, `count` buckets of
+   * `width` from `start`: the present stretches (`store.ts`) spread over the
+   * buckets they overlap.
+   */
+  activeHours(start: number, width: number, count: number): Map<string, number[]> {
+    const presence = this.cols.presence;
+    const out = new Map<string, number[]>();
+    const end = start + count * width;
+    for (let i = 0; i < presence.length; i++) {
+      const from = presence.from[i] ?? 0;
+      const to = presence.to[i] ?? 0;
+      if (to <= start || from >= end) continue;
+      const name = presence.names[presence.repo[i] ?? 0] ?? "?";
+      let values = out.get(name);
+      if (values === undefined) {
+        values = new Array<number>(count).fill(0);
+        out.set(name, values);
+      }
+      spreadHours(values, start, width, from, to, presence.weight[i] ?? 0);
+    }
+    return out;
   }
 
   /** Every value of a dimension the calls have, by all-time cost, biggest first. */

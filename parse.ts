@@ -10,7 +10,12 @@
  * or is resumed, and it names the logged-in email; every call after it, up to
  * the next one, is that account's. A switch made mid-session therefore shows
  * at the next resume, not at the login itself.
+ *
+ * It also notes the moments the reader acted (`HumanEvent`), which the
+ * active-time estimate is made of (`presence.ts`).
  */
+
+import { LEAD_MAX } from "./presence";
 
 /** One API call: when, on whose account, with what, and how many tokens. */
 export type Usage = {
@@ -40,6 +45,14 @@ export type Usage = {
  */
 export type LimitHit = { ts: number; account: string; resetsAt: number };
 
+/**
+ * A moment the reader demonstrably acted in a session (`humanOf`): the input
+ * of the active-time estimate (`presence.ts`). `lead` is the time since the
+ * session's previous assistant line, at most `LEAD_MAX`; `cwd` the session's
+ * folder then, which places it in a repository as a call made there is.
+ */
+export type HumanEvent = { ts: number; lead: number; cwd: string };
+
 /** When a session's account changed, oldest first: how a sub-agent's calls are attributed. */
 export type Segment = { ts: number; account: string };
 
@@ -56,6 +69,12 @@ export type ReaderState = {
   written: string[];
   /** Weekly-limit refusals since the scan last took them. */
   hits: LimitHit[];
+  /** When the last assistant line was written, 0 before one: an event's lead. */
+  replied: number;
+  /** The AskUserQuestion calls not answered yet, by tool_use id: their answer is the reader's. */
+  asks: string[];
+  /** The reader's own events since the scan last took them. */
+  human: HumanEvent[];
 };
 
 export const UNKNOWN = "not recorded";
@@ -73,6 +92,9 @@ export function freshState(account = ""): ReaderState {
     recent: [],
     written: [],
     hits: [],
+    replied: 0,
+    asks: [],
+    human: [],
   };
 }
 
@@ -107,18 +129,29 @@ const asRecord = (value: unknown): Line | null =>
 const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
 const str = (value: unknown) => (typeof value === "string" ? value : "");
 
+/** A tool result that says the reader refused the call. */
+const REFUSED = "doesn't want to proceed";
+
 /**
  * Lines worth parsing: the rest are skipped without `JSON.parse`, which is
- * most of the bytes. A user line only while the first prompt is still wanted.
+ * most of the bytes. Of user lines, a tool result — most of them, and the
+ * biggest — only when it may be the reader's own: a refused call, or the
+ * answer to a question still open (`humanOf`). A queued prompt only when
+ * queued, not when taken off the queue.
  */
-export function interesting(line: string, wantPrompt: boolean): boolean {
-  return (
+export function interesting(line: string, state: ReaderState): boolean {
+  if (
     line.includes('"usage"') ||
     line.includes("session_context") ||
     line.includes('"custom-title"') ||
-    line.includes('"quotaLimits"') ||
-    (wantPrompt && line.includes('"type":"user"') && !line.includes('"toolUseResult"'))
-  );
+    line.includes('"quotaLimits"')
+  ) {
+    return true;
+  }
+  if (line.includes('"queue-operation"')) return line.includes('"enqueue"');
+  if (!line.includes('"type":"user"')) return false;
+  if (!line.includes('"toolUseResult"')) return true;
+  return line.includes(REFUSED) || state.asks.some((id) => line.includes(id));
 }
 
 /** The first line of the first prompt the reader typed, for a session with no title. */
@@ -134,6 +167,82 @@ function promptOf(line: Line): string {
   const first = text.trim().split("\n")[0] ?? "";
   return first.startsWith("<") ? "" : first.slice(0, 90);
 }
+
+/**
+ * What a user line or a queued prompt that begins so is: Claude Code or
+ * prifly speaking, not the reader typing.
+ */
+const NOT_TYPED = [
+  "<task-notification",
+  "<local-command-stdout",
+  "Caveat:",
+  "<prifly-notice",
+  "<system-reminder",
+];
+
+/** Whether a prompt's text is the reader's: something, and not in a machine's voice. */
+function typed(text: string): boolean {
+  const start = text.trimStart();
+  return start !== "" && !NOT_TYPED.some((prefix) => start.startsWith(prefix));
+}
+
+/** The most AskUserQuestion calls kept waiting for an answer: one abandoned must not pile up. */
+const ASKS = 16;
+
+/**
+ * Whether a line is the reader acting: a prompt typed (a slash command and
+ * an interrupt included), one queued while Claude worked — those have no
+ * user line of their own — the answer to an AskUserQuestion, or a tool call
+ * refused. Not a meta line, a compaction's summary, a sub-agent's line
+ * (a sidechain), a tool's result, or anything `NOT_TYPED` begins. An
+ * enqueue with no text is the queue recording a prompt whose own user line
+ * follows at once.
+ */
+function humanOf(state: ReaderState, line: Line): boolean {
+  if (line["type"] === "queue-operation") {
+    return line["operation"] === "enqueue" && typed(str(line["content"]));
+  }
+  const machine =
+    line["isMeta"] === true || line["isCompactSummary"] === true || line["isSidechain"] === true;
+  if (line["type"] !== "user" || machine) return false;
+  const content = asRecord(line["message"])?.["content"];
+  if (typeof content === "string") return typed(content);
+  return Array.isArray(content) && blocksAreHuman(state, line, content.map(asRecord));
+}
+
+/** Whether a user line's content blocks are the reader's: `humanOf` for a list of blocks. */
+function blocksAreHuman(state: ReaderState, line: Line, blocks: (Line | null)[]): boolean {
+  for (const block of blocks) {
+    if (block?.["type"] !== "tool_result") continue;
+    const at = state.asks.indexOf(str(block["tool_use_id"]));
+    if (at >= 0) {
+      state.asks.splice(at, 1);
+      return true;
+    }
+    if (JSON.stringify(block["content"] ?? "").includes(REFUSED)) return true;
+  }
+  if (line["toolUseResult"] !== undefined) return false;
+  const text = blocks.find((block) => block?.["type"] === "text");
+  // A pasted picture with no words is typed too.
+  if (text === undefined) return blocks.some((block) => block?.["type"] === "image");
+  return typed(str(text?.["text"]));
+}
+
+/** The AskUserQuestion calls an assistant line makes, remembered until answered. */
+function noteAsks(state: ReaderState, line: Line): void {
+  const content = asRecord(line["message"])?.["content"];
+  if (!Array.isArray(content)) return;
+  for (const raw of content) {
+    const block = asRecord(raw);
+    if (block?.["type"] !== "tool_use" || block["name"] !== "AskUserQuestion") continue;
+    state.asks.push(str(block["id"]));
+    if (state.asks.length > ASKS) state.asks.shift();
+  }
+}
+
+/** An event's lead: the time since the session's last assistant line, at most `LEAD_MAX`. */
+const leadOf = (state: ReaderState, ts: number) =>
+  state.replied === 0 ? LEAD_MAX : Math.min(Math.max(ts - state.replied, 0), LEAD_MAX);
 
 function accountOf(line: Line): string {
   const attachment = asRecord(line["attachment"]);
@@ -161,7 +270,11 @@ export function readLine(
     state.account = account;
     state.segments.push({ ts: Number.isNaN(ts) ? 0 : ts, account });
   }
-  if (line["type"] !== "assistant" || Number.isNaN(ts)) return null;
+  if (Number.isNaN(ts)) return null;
+  if (humanOf(state, line)) state.human.push({ ts, lead: leadOf(state, ts), cwd: state.cwd });
+  if (line["type"] !== "assistant") return null;
+  state.replied = ts;
+  noteAsks(state, line);
   // Each content block has a line of its own: a tool call is on one the call's id skips.
   state.written.push(...writesOf(line));
   const charged = (fixed === null ? state.account : fixed(ts)) || UNKNOWN;
@@ -210,7 +323,7 @@ export function readText(
 ): Usage[] {
   const out: Usage[] = [];
   for (const raw of text.split("\n")) {
-    if (!interesting(raw, state.prompt === "")) continue;
+    if (!interesting(raw, state)) continue;
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);

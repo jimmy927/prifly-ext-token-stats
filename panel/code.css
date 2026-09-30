@@ -25,6 +25,9 @@
   align-items: baseline;
   gap: 4px 12px;
 }
+.code .tiles {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
 .code-chart {
   height: 200px;
   position: relative;

@@ -72,9 +72,17 @@ test("the archive keeps every field through its compact form", () => {
       writes: { odi: 1 },
       hits: [{ ts: 6, account: "b@x.com", resetsAt: 10 }],
     },
+    // The reader's events, with no refusals or writes, and with both.
+    { ...file("/p/e.jsonl", 3), human: [{ ts: 7, lead: 1000, cwd: "/src/y" }] },
+    {
+      ...file("/p/f.jsonl", 4),
+      writes: { odi: 2 },
+      hits: [{ ts: 8, account: "a@x.com", resetsAt: 11 }],
+      human: [{ ts: 9, lead: 120_000, cwd: "/tmp/x" }],
+    },
   ];
   const json = JSON.parse(JSON.stringify(encodeArchive(files)));
-  expect(json.strings).toEqual(["a@x.com", "claude-opus-5-5", "/tmp/x", "b@x.com"]);
+  expect(json.strings).toEqual(["a@x.com", "claude-opus-5-5", "/tmp/x", "b@x.com", "/src/y"]);
   expect(decodeArchive(json)).toEqual(files);
   expect(decodeArchive({ version: 99, strings: [], files: [] })).toBeNull();
   expect(decodeArchive({ version: 1, strings: [], files: [7] })).toBeNull();

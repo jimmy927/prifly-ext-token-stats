@@ -23,7 +23,20 @@ const call = (ts: number): Usage => ({
 /** What one call above costs: 1000 input at $4/M, 9000 cache reads at $0.20/M, 10000 output at $20/M. */
 const COST = (4000 + 1800 + 200_000) / 1e6;
 
-/** alpha spends on days 0 and 1, beta on day 1, cloud (no checkout) on day 2; gamma has lines, no spend. */
+const MIN = 60_000;
+/** A moment the reader acted, with no lead: only the gaps between them count. */
+const presentAt = (ts: number) => ({ ts, lead: 0, cwd: "/x" });
+/**
+ * On day 1 the reader answers alpha at 10:00 and 10:10 and beta at 10:12:
+ * alpha has the 10-minute gap at 0.72, beta the 2 minutes after it whole.
+ */
+const ALPHA_HOURS = (10 * 0.72) / 60;
+const BETA_HOURS = 2 / 60;
+
+/**
+ * alpha spends on days 0 and 1, beta on day 1, cloud (no checkout) on day 2; gamma has lines, no
+ * spend. The reader is active on day 1, for alpha and beta.
+ */
 const answerer = new Answerer(
   buildColumns([
     {
@@ -32,6 +45,7 @@ const answerer = new Answerer(
       source: "local",
       repo: "alpha",
       usages: [call(DAY0 + 10 * HOUR), call(DAY0 + DAY + 10 * HOUR)],
+      human: [presentAt(DAY0 + DAY + 10 * HOUR), presentAt(DAY0 + DAY + 10 * HOUR + 10 * MIN)],
     },
     {
       sessionId: "s2",
@@ -39,6 +53,7 @@ const answerer = new Answerer(
       source: "local",
       repo: "beta",
       usages: [call(DAY0 + DAY + 11 * HOUR)],
+      human: [presentAt(DAY0 + DAY + 10 * HOUR + 12 * MIN)],
     },
     {
       sessionId: "s3",
@@ -154,6 +169,35 @@ test("a commit lands in the bucket of the reader's own day", () => {
   expect(a.lines[0]?.values[at]).toBe(7);
   expect(a.lines[0]?.values.reduce((x, y) => x + y, 0)).toBe(7);
   expect(ask({}, source).lines[0]?.values).toEqual([0, 7, 0]);
+});
+
+test("active hours per bucket, per repository and per 1,000 lines", () => {
+  const a = ask();
+  const hours = a.hours[0]?.values ?? [];
+  expect(a.hours[0]?.key).toBe("all");
+  expect(hours[0]).toBe(0);
+  close(hours[1], ALPHA_HOURS + BETA_HOURS);
+  expect(hours[2]).toBe(0);
+  const [alpha, beta, cloud] = a.rows;
+  close(alpha?.hours, ALPHA_HOURS);
+  close(alpha?.hoursPerK, (ALPHA_HOURS / 400) * 1000);
+  close(beta?.hours, BETA_HOURS);
+  expect(cloud?.hours).toBe(0);
+  expect(cloud?.hoursPerK).toBeNull();
+  close(a.totals.hours, ALPHA_HOURS + BETA_HOURS);
+  close(a.totals.hoursPerK, ((ALPHA_HOURS + BETA_HOURS) / 460) * 1000);
+  // The trailing day of daily buckets is the bucket itself; day 2's 10 lines are too few.
+  const perK = a.hoursPerK.values;
+  expect(perK[0]).toBe(0);
+  close(perK[1], ((ALPHA_HOURS + BETA_HOURS) / 350) * 1000);
+  expect(perK[2]).toBeNull();
+  // Split by repository, the hours chart has the other charts' series in their order.
+  const split = ask({ byRepo: true, top: 10 });
+  expect(split.hours.map((s) => s.key)).toEqual(split.cost.map((s) => s.key));
+  close(split.hours[0]?.total, ALPHA_HOURS);
+  const one = ask({ repo: "beta" });
+  close(one.totals.hours, BETA_HOURS);
+  close(one.hours[0]?.total, BETA_HOURS);
 });
 
 test("an answer before git has been read says so", () => {

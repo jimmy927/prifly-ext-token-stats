@@ -11,7 +11,7 @@
 
 import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
-import type { LimitHit, Usage } from "./parse";
+import type { HumanEvent, LimitHit, Usage } from "./parse";
 
 export type FileOut = {
   path: string;
@@ -28,6 +28,12 @@ export type FileOut = {
   writes?: Record<string, number>;
   /** Its weekly-limit refusals, absent where there were none. */
   hits?: LimitHit[];
+  /**
+   * The moments the reader acted in it (`HumanEvent`): a session's own
+   * transcript only, never a sub-agent's. Absent where there were none, and
+   * on transcripts archived before they were kept.
+   */
+  human?: HumanEvent[];
 };
 
 const ARCHIVE_VERSION = 1;
@@ -43,9 +49,12 @@ type PackedUsage =
   | [number, number, number, number, number, number, number, number, number];
 /** ts, account (an index into `strings`), resetsAt. */
 type PackedHit = [number, number, number];
+/** ts, lead, cwd (an index into `strings`). */
+type PackedHuman = [number, number, number];
 /**
  * path, session, parent, title, calls, and the writes where there were any;
- * a file with weekly-limit refusals adds them, its writes null if none.
+ * a file with weekly-limit refusals adds them, its writes null if none; a
+ * file with the reader's events adds them after its refusals, [] if none.
  */
 type PackedFile =
   | [string, string, string | null, string, PackedUsage[]]
@@ -58,6 +67,16 @@ type PackedFile =
       PackedUsage[],
       Record<string, number> | null,
       PackedHit[],
+    ]
+  | [
+      string,
+      string,
+      string | null,
+      string,
+      PackedUsage[],
+      Record<string, number> | null,
+      PackedHit[],
+      PackedHuman[],
     ];
 type ArchiveJson = { version: number; strings: string[]; files: PackedFile[] };
 
@@ -92,10 +111,12 @@ export function encodeArchive(files: Iterable<FileOut>): ArchiveJson {
         return u.cacheWrite1h === undefined ? [...counts] : [...counts, u.cacheWrite1h];
       }),
     ] as const;
-    if (file.hits !== undefined && file.hits.length > 0) {
-      const hits = file.hits.map((h): PackedHit => [h.ts, code(h.account), h.resetsAt]);
-      return [...head, file.writes ?? null, hits];
+    const hits = (file.hits ?? []).map((h): PackedHit => [h.ts, code(h.account), h.resetsAt]);
+    if (file.human !== undefined && file.human.length > 0) {
+      const human = file.human.map((e): PackedHuman => [e.ts, e.lead, code(e.cwd)]);
+      return [...head, file.writes ?? null, hits, human];
     }
+    if (hits.length > 0) return [...head, file.writes ?? null, hits];
     return file.writes === undefined ? [...head] : [...head, file.writes];
   });
   return { version: ARCHIVE_VERSION, strings, files: packed };
@@ -119,15 +140,18 @@ export function decodeArchive(raw: unknown): FileOut[] | null {
 
 function unpack(strings: string[], files: PackedFile[]): FileOut[] {
   const str = (at: number) => strings[at] ?? "";
-  return files.map(([path, sessionId, parentId, title, usages, writes, hits]) => ({
+  return files.map(([path, sessionId, parentId, title, usages, writes, hits, human]) => ({
     path,
     sessionId,
     parentId,
     title,
     ...(writes === undefined || writes === null ? {} : { writes }),
-    ...(hits === undefined
+    ...(hits === undefined || hits.length === 0
       ? {}
       : { hits: hits.map(([ts, account, resetsAt]) => ({ ts, account: str(account), resetsAt })) }),
+    ...(human === undefined
+      ? {}
+      : { human: human.map(([ts, lead, cwd]) => ({ ts, lead, cwd: str(cwd) })) }),
     usages: usages.map(
       ([ts, account, model, cwd, input, cacheWrite, cacheRead, output, cacheWrite1h]) => ({
         ts,

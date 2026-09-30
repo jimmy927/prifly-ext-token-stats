@@ -9,12 +9,13 @@
 
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { freshState, readLine, type Usage } from "./parse";
+import { freshState, type HumanEvent, readLine, type Usage } from "./parse";
 import type { CloudSessionInfo, ExtensionCloud } from "./prifly-api";
 import type { Batch } from "./store";
 import { repoOfUrl } from "./where";
 
-type Held = { info: CloudSessionInfo; usages: Usage[] };
+/** `human` is absent on a session read before the reader's events were kept. */
+type Held = { info: CloudSessionInfo; usages: Usage[]; human?: HumanEvent[] };
 
 const CACHE_VERSION = 1;
 
@@ -44,12 +45,13 @@ export class RemoteSessions {
   }
 
   batches(): Batch[] {
-    return [...this.held.values()].map(({ info, usages }) => ({
+    return [...this.held.values()].map(({ info, usages, human }) => ({
       sessionId: info.id,
       title: info.title,
       source: "remote",
       repo: info.repo === "" ? "unknown" : repoOfUrl(info.repo),
       usages,
+      ...(human === undefined ? {} : { human }),
     }));
   }
 
@@ -66,7 +68,9 @@ export class RemoteSessions {
       const sessions = await this.cloud.sessions();
       for (const info of sessions) {
         const held = this.held.get(info.id);
-        if (held !== undefined && held.info.updatedAt === info.updatedAt) continue;
+        // One read before the reader's events were kept is fetched again, once, while still listed.
+        const current = held?.info.updatedAt === info.updatedAt && held.human !== undefined;
+        if (current) continue;
         changed = (await this.fetch(info)) || changed;
       }
       this.error = "";
@@ -83,7 +87,7 @@ export class RemoteSessions {
   private async fetch(info: CloudSessionInfo): Promise<boolean> {
     try {
       const lines = await this.cloud.transcript(info.account, info.id);
-      this.held.set(info.id, { info, usages: this.read(info, lines) });
+      this.held.set(info.id, { info, ...this.read(info, lines) });
       return true;
     } catch (caught) {
       const error = caught instanceof Error ? caught.message : String(caught);
@@ -92,15 +96,16 @@ export class RemoteSessions {
     }
   }
 
-  private read(info: CloudSessionInfo, lines: unknown[]): Usage[] {
+  /** A transcript's calls, and the reader's events: the same reader as a local session's. */
+  private read(info: CloudSessionInfo, lines: unknown[]): { usages: Usage[]; human: HumanEvent[] } {
     const state = freshState(info.account);
-    const out: Usage[] = [];
+    const usages: Usage[] = [];
     for (const line of lines) {
       if (typeof line !== "object" || line === null) continue;
       const usage = readLine(state, line as Record<string, unknown>, () => info.account);
-      if (usage !== null) out.push(usage);
+      if (usage !== null) usages.push(usage);
     }
-    return out;
+    return { usages, human: state.human };
   }
 
   private async load(): Promise<void> {

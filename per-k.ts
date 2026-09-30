@@ -7,6 +7,9 @@
  * trailing day (or of its own bucket, when a bucket is a day or longer), and a
  * point whose day added fewer than `MIN_LINES` lines is left out as a gap
  * rather than drawn as a spike.
+ *
+ * The active hours per 1,000 lines are the same arithmetic with the reader's
+ * hours in place of the dollars (`code-answer.ts`).
  */
 
 const DAY = 24 * 3_600_000;
