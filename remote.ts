@@ -14,8 +14,11 @@ import type { CloudSessionInfo, ExtensionCloud } from "./prifly-api";
 import type { Batch } from "./store";
 import { repoOfUrl } from "./where";
 
-/** `human` is absent on a session read before the reader's events were kept. */
-type Held = { info: CloudSessionInfo; usages: Usage[]; human?: HumanEvent[] };
+/**
+ * `human` is absent on a session read before the reader's events were kept,
+ * `prompts` on one read before their prompts' tokens were.
+ */
+type Held = { info: CloudSessionInfo; usages: Usage[]; human?: HumanEvent[]; prompts?: true };
 
 const CACHE_VERSION = 1;
 
@@ -68,8 +71,8 @@ export class RemoteSessions {
       const sessions = await this.cloud.sessions();
       for (const info of sessions) {
         const held = this.held.get(info.id);
-        // One read before the reader's events were kept is fetched again, once, while still listed.
-        const current = held?.info.updatedAt === info.updatedAt && held.human !== undefined;
+        // One read before the reader's events and prompts were kept is fetched again, once, while still listed.
+        const current = held?.info.updatedAt === info.updatedAt && held.prompts === true;
         if (current) continue;
         changed = (await this.fetch(info)) || changed;
       }
@@ -97,7 +100,10 @@ export class RemoteSessions {
   }
 
   /** A transcript's calls, and the reader's events: the same reader as a local session's. */
-  private read(info: CloudSessionInfo, lines: unknown[]): { usages: Usage[]; human: HumanEvent[] } {
+  private read(
+    info: CloudSessionInfo,
+    lines: unknown[],
+  ): { usages: Usage[]; human: HumanEvent[]; prompts: true } {
     const state = freshState(info.account);
     const usages: Usage[] = [];
     for (const line of lines) {
@@ -105,7 +111,7 @@ export class RemoteSessions {
       const usage = readLine(state, line as Record<string, unknown>, () => info.account);
       if (usage !== null) usages.push(usage);
     }
-    return { usages, human: state.human };
+    return { usages, human: state.human, prompts: true };
   }
 
   private async load(): Promise<void> {

@@ -50,8 +50,11 @@ export type LimitHit = { ts: number; account: string; resetsAt: number };
  * of the active-time estimate (`presence.ts`). `lead` is the time since the
  * session's previous assistant line, at most `LEAD_MAX`; `cwd` the session's
  * folder then, which places it in a repository as a call made there is.
+ * `tokens` is there when the event is a prompt the reader wrote (`promptOf`):
+ * the estimated size of their own words. Events read before it was kept have
+ * none, and count as no prompt.
  */
-export type HumanEvent = { ts: number; lead: number; cwd: string };
+export type HumanEvent = { ts: number; lead: number; cwd: string; tokens?: number };
 
 /** When a session's account changed, oldest first: how a sub-agent's calls are attributed. */
 export type Segment = { ts: number; account: string };
@@ -259,6 +262,101 @@ function noteAsks(state: ReaderState, line: Line): void {
   }
 }
 
+/**
+ * What prifly and Claude Code wrap around a prompt or add to it — prifly's
+ * blocks (`<prifly-intent>`, `<prifly-paint>`, a session's brief in
+ * `<prifly-brief>` …), system reminders and pasted text, whose closing tag
+ * may repeat its id (`</pasted_content id="8f83">`) — and prifly's
+ * self-closing tags: not the reader's words.
+ */
+const ADDED =
+  /<(prifly-[a-z-]+|system-reminder|pasted_content)\b[^>]*?(?<!\/)>[\s\S]*?<\/\1\b[^>]*>/g;
+const ADDED_TAG = /<prifly-[a-z-]+\b[^>]*\/>/g;
+
+/**
+ * How a prompt begins when it is not written but sent: a slash command, a
+ * shell command run with `!`, an interrupt, and what a button in prifly
+ * sends — a proposal's Go ahead, the status report.
+ */
+const NOT_WRITTEN = [
+  "<command-name>",
+  "<command-message>",
+  "<bash-input>",
+  "[Request interrupted",
+  "Go ahead with",
+  "Give me a status report on this session",
+];
+
+/**
+ * Characters per token of a prompt's own words, fit on 1,867 prompts over
+ * 4,000 characters in this machine's transcripts (Opus 5 to Fable 5.1, 5 Oct
+ * 2026): the growth of the context from the call before a prompt to the call
+ * after it, less the earlier call's output, against the prompt's length.
+ * Prose (under 1% of `{};=()<>`) 2.90, intercept 26 tokens; code-like text
+ * (3% or more) 2.33, intercept 23. In between, the two are blended.
+ */
+const PROSE_CHARS_PER_TOKEN = 2.9;
+const CODE_CHARS_PER_TOKEN = 2.33;
+const CODE_MARKS = /[{};=()<>]/g;
+
+/** A text's estimated size in tokens (`PROSE_CHARS_PER_TOKEN`). */
+export function estimateTokens(text: string): number {
+  if (text === "") return 0;
+  const density = (text.match(CODE_MARKS)?.length ?? 0) / text.length;
+  const code = Math.min(1, Math.max(0, (density - 0.01) / 0.02));
+  return Math.round(
+    text.length / (PROSE_CHARS_PER_TOKEN + code * (CODE_CHARS_PER_TOKEN - PROSE_CHARS_PER_TOKEN)),
+  );
+}
+
+/** The reader's own words in a prompt's text: what prifly and Claude Code add, taken out. */
+export function ownWords(text: string): string {
+  return text.replace(ADDED, "").replace(ADDED_TAG, "").trim();
+}
+
+/** A user line's text, every text block of it; a queued prompt's content. */
+function textOf(line: Line): string {
+  if (line["type"] === "queue-operation") return str(line["content"]);
+  const content = asRecord(line["message"])?.["content"];
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map(asRecord)
+    .filter((block) => block?.["type"] === "text")
+    .map((block) => str(block?.["text"]))
+    .join("\n");
+}
+
+/**
+ * The estimated tokens of a human event that is a prompt the reader wrote,
+ * or null when it is not one: an answer or a refusal (a tool result), a
+ * slash or shell command, an interrupt, a button's prompt (`NOT_WRITTEN`),
+ * a prompt with no words of the reader's own once prifly's additions are
+ * out (a brief from another session, a bare picture), or anything in a
+ * session under `/tmp` or before its folder is known — prifly's reviewers,
+ * which prifly prompts itself.
+ */
+function promptTokensOf(state: ReaderState, line: Line): number | null {
+  // No folder yet: a prompt queued as a session's first line, which is prifly starting a reviewer.
+  if (state.cwd === "" || state.cwd === "/tmp" || state.cwd.startsWith("/tmp/")) return null;
+  if (line["type"] !== "queue-operation") {
+    const content = asRecord(line["message"])?.["content"];
+    const blocks = Array.isArray(content) ? content.map(asRecord) : [];
+    if (blocks.some((block) => block?.["type"] === "tool_result")) return null;
+  }
+  const own = ownWords(textOf(line));
+  if (own === "" || NOT_WRITTEN.some((prefix) => own.startsWith(prefix))) return null;
+  return estimateTokens(own);
+}
+
+/** A line that is the reader acting, as an event: with its tokens when it is a prompt they wrote. */
+function noteHuman(state: ReaderState, line: Line, ts: number): void {
+  if (!humanOf(state, line)) return;
+  const tokens = promptTokensOf(state, line);
+  const event: HumanEvent = { ts, lead: leadOf(state, ts), cwd: state.cwd };
+  state.human.push(tokens === null ? event : { ...event, tokens });
+}
+
 /** An event's lead: the time since the session's last assistant line, at most `LEAD_MAX`. */
 const leadOf = (state: ReaderState, ts: number) =>
   state.replied === 0 ? LEAD_MAX : Math.min(Math.max(ts - state.replied, 0), LEAD_MAX);
@@ -290,7 +388,7 @@ export function readLine(
     state.segments.push({ ts: Number.isNaN(ts) ? 0 : ts, account });
   }
   if (Number.isNaN(ts)) return null;
-  if (humanOf(state, line)) state.human.push({ ts, lead: leadOf(state, ts), cwd: state.cwd });
+  noteHuman(state, line, ts);
   if (line["type"] !== "assistant") return null;
   state.replied = ts;
   noteAsks(state, line);

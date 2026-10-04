@@ -132,6 +132,8 @@ export function simulateRows(
     if (ts < from || ts >= to) continue;
     // A part of a split call is cut as the whole call would be: the window sees all its context.
     const share = cols.share[i] ?? 1;
+    // A prompt's row is no call.
+    if (share === 0) continue;
     tally.add(
       cols.prices[cols.codes.model[i] ?? 0] ?? null,
       {

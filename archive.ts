@@ -49,8 +49,8 @@ type PackedUsage =
   | [number, number, number, number, number, number, number, number, number];
 /** ts, account (an index into `strings`), resetsAt. */
 type PackedHit = [number, number, number];
-/** ts, lead, cwd (an index into `strings`). */
-type PackedHuman = [number, number, number];
+/** ts, lead, cwd (an index into `strings`), and a prompt's tokens where it is one. */
+type PackedHuman = [number, number, number] | [number, number, number, number];
 /**
  * path, session, parent, title, calls, and the writes where there were any;
  * a file with weekly-limit refusals adds them, its writes null if none; a
@@ -113,7 +113,12 @@ export function encodeArchive(files: Iterable<FileOut>): ArchiveJson {
     ] as const;
     const hits = (file.hits ?? []).map((h): PackedHit => [h.ts, code(h.account), h.resetsAt]);
     if (file.human !== undefined && file.human.length > 0) {
-      const human = file.human.map((e): PackedHuman => [e.ts, e.lead, code(e.cwd)]);
+      const human = file.human.map(
+        (e): PackedHuman =>
+          e.tokens === undefined
+            ? [e.ts, e.lead, code(e.cwd)]
+            : [e.ts, e.lead, code(e.cwd), e.tokens],
+      );
       return [...head, file.writes ?? null, hits, human];
     }
     if (hits.length > 0) return [...head, file.writes ?? null, hits];
@@ -151,7 +156,13 @@ function unpack(strings: string[], files: PackedFile[]): FileOut[] {
       : { hits: hits.map(([ts, account, resetsAt]) => ({ ts, account: str(account), resetsAt })) }),
     ...(human === undefined
       ? {}
-      : { human: human.map(([ts, lead, cwd]) => ({ ts, lead, cwd: str(cwd) })) }),
+      : {
+          human: human.map(([ts, lead, cwd, tokens]) =>
+            tokens === undefined
+              ? { ts, lead, cwd: str(cwd) }
+              : { ts, lead, cwd: str(cwd), tokens },
+          ),
+        }),
     usages: usages.map(
       ([ts, account, model, cwd, input, cacheWrite, cacheRead, output, cacheWrite1h]) => ({
         ts,

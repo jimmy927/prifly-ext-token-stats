@@ -7,7 +7,8 @@ window.
 - **Split by** account, model, repository, folder, local/remote or session, or
   show the total.
 - **Measure** cost (the default), output tokens, input + cache writes, cache
-  reads, all tokens, or API calls.
+  reads, all tokens, API calls, or the **prompts** you wrote and their
+  estimated **prompt tokens** (below).
 - **Time**: ranges from 15 minutes to all history, and buckets from 1 second to
   1 week. Drag across the chart to zoom in. Double-click or Backspace goes
   back, and ←/→ pans. The strip under the chart shows all history; drag on it
@@ -16,6 +17,38 @@ window.
   table row to show only that one; click a legend entry to hide it.
 - A table of the stretch on screen (cost, output, input, cache reads, calls,
   sessions, share) and a weekday-by-hour map.
+
+## Prompts
+
+The **Prompts** and **Prompt tokens** measures count the prompts you wrote
+and the size of your own words in them. They split and filter like every
+other measure, and the table has a column for each.
+
+- **A prompt you wrote** is a human event (see Code below) that is a prompt
+  typed, dictated or queued, with words of your own once what is added is
+  taken out (`parse.ts`). Taken out: prifly's blocks (`<prifly-intent>`,
+  `<prifly-paint>`, `<prifly-research>`, `<prifly-image>`, a session's
+  brief in `<prifly-brief>` …) and its self-closing tags, `<system-reminder>`,
+  and `<pasted_content>`. Not prompts: answers to a question, refused tool
+  calls, slash commands, `!` shell commands, interrupts, what a button sends
+  (a proposal's "Go ahead with", "Give me a status report on this session"),
+  and anything in a session run in `/tmp` or queued before a session names
+  its folder — prifly's reviewers, which prifly prompts itself.
+- Text pasted into a terminal session arrives as typed, with no wrapper, and
+  counts as your words. A session another session started with a plain
+  prompt (no `<prifly-brief>`) counts its first prompt too.
+- **Tokens** are estimated from the length of your words: 2.90 characters a
+  token for prose, 2.33 for code-like text (3% or more of the characters
+  `{};=()<>`), blended in between. The ratios were fit on 5 Oct 2026 on
+  1,867 prompts over 4,000 characters in this machine's transcripts (Opus 5
+  to Fable 5.1): how much the context grew from the call before a prompt to
+  the call after it, less the earlier call's output, against the prompt's
+  length. Both fits had an intercept under 30 tokens.
+- A prompt is placed as a call made then would be: its folder's repository,
+  or its transcript's writes. Its **account and model** are those of the call
+  that answered it, its transcript's next call (or else its last).
+- Transcripts archived before prompts were kept, and archived remote
+  sessions no longer listed, have no prompts.
 
 ## Forecast
 

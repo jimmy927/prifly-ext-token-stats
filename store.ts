@@ -11,12 +11,18 @@
  * to the call. A transcript that wrote into none leaves its call whole, in
  * `NO_REPO`.
  *
+ * A row can also be a prompt the reader wrote (`HumanEvent.tokens`): `prompts`
+ * 1 and its estimated `promptTokens`, no tokens of a call and a `share` of 0,
+ * so it is in no call count. It is placed as a call made then would be, and
+ * takes the account and model of its transcript's next call (the one that
+ * answered it), or else of its last.
+ *
  * Beside the calls, the reader's active time (`Presence`): each present
  * stretch placed in a repository the same way, by the folder and writes of
  * the session the reader replied to next.
  */
 
-import type { HumanEvent, Usage } from "./parse";
+import { type HumanEvent, UNKNOWN, type Usage } from "./parse";
 import { presenceStretches, type TimelineEvent } from "./presence";
 import { costOf, type Price, priceOf } from "./prices";
 import { folderLabel, NO_REPO, resolveRepos } from "./where";
@@ -59,8 +65,12 @@ export type Columns = {
   codes: Record<Dimension, Int32Array>;
   /** The strings each dimension's codes stand for. */
   names: Record<Dimension, string[]>;
-  /** The part of its call a row is: 1, or less for a call split across repositories. */
+  /** The part of its call a row is: 1, or less for a call split across repositories; 0 for a prompt. */
   share: Float64Array;
+  /** The part of a prompt the reader wrote a row is: 0 on a call's row. */
+  prompts: Float64Array;
+  /** That part of the prompt's estimated tokens. */
+  promptTokens: Float64Array;
   /** The counts and the cost below are the row's part of its call's, already scaled by `share`. */
   input: Float64Array;
   cacheWrite: Float64Array;
@@ -137,6 +147,8 @@ class Filler {
     this.cols = {
       ts: new Float64Array(length),
       share: new Float64Array(length),
+      prompts: new Float64Array(length),
+      promptTokens: new Float64Array(length),
       input: new Float64Array(length),
       cacheWrite: new Float64Array(length),
       cacheWrite1h: new Float64Array(length),
@@ -154,14 +166,11 @@ class Filler {
 
   /** One call, as a row per place it goes to. */
   add(batch: Batch, session: string, usage: Usage, places: readonly Place[]): void {
-    const { cols, codes, interners } = this;
+    const { cols } = this;
     const price = this.priceFor(usage.model);
     const cost = price === null ? 0 : costOf(price, usage);
-    const folder =
-      batch.source === "remote" ? `cloud: ${usage.cwd || "?"}` : folderLabel(usage.cwd);
     for (const [repo, share] of places) {
-      const i = this.i++;
-      cols.ts[i] = usage.ts;
+      const i = this.row(batch, session, usage.account, usage.model, usage.ts, usage.cwd, repo);
       cols.share[i] = share;
       cols.input[i] = usage.input * share;
       cols.cacheWrite[i] = usage.cacheWrite * share;
@@ -170,13 +179,55 @@ class Filler {
       cols.output[i] = usage.output * share;
       cols.cost[i] = cost * share;
       cols.priced[i] = price === null ? 0 : 1;
-      codes.account[i] = interners.account.code(usage.account);
-      codes.model[i] = interners.model.code(usage.model);
-      codes.repo[i] = interners.repo.code(repo);
-      codes.folder[i] = interners.folder.code(folder);
-      codes.source[i] = interners.source.code(batch.source);
-      codes.session[i] = interners.session.code(session);
     }
+  }
+
+  /**
+   * A prompt the reader wrote, as a row per place it goes to, on the account
+   * and model of `answer`, the call that answered it. No call's counts: it is
+   * priced, at nothing, so it is never among the unpriced calls.
+   */
+  addPrompt(
+    batch: Batch,
+    session: string,
+    event: HumanEvent,
+    answer: Usage | null,
+    places: readonly Place[],
+  ): void {
+    const { cols } = this;
+    const account = answer?.account || UNKNOWN;
+    const model = answer?.model ?? "unknown";
+    this.priceFor(model);
+    for (const [repo, share] of places) {
+      const i = this.row(batch, session, account, model, event.ts, event.cwd, repo);
+      cols.prompts[i] = share;
+      cols.promptTokens[i] = (event.tokens ?? 0) * share;
+      cols.priced[i] = 1;
+    }
+  }
+
+  /** The next row, with its time and its place in every dimension; its counts are left at 0. */
+  private row(
+    batch: Batch,
+    session: string,
+    account: string,
+    model: string,
+    ts: number,
+    cwd: string,
+    repo: string,
+  ): number {
+    const { cols, codes, interners } = this;
+    const i = this.i++;
+    cols.ts[i] = ts;
+    codes.account[i] = interners.account.code(account);
+    codes.model[i] = interners.model.code(model);
+    codes.repo[i] = interners.repo.code(repo);
+    codes.folder[i] = interners.folder.code(
+      batch.source === "remote" ? `cloud: ${cwd || "?"}` : folderLabel(cwd),
+    );
+    codes.source[i] = interners.source.code(batch.source);
+    codes.session[i] = interners.session.code(session);
+    return i;
   }
 }
 
@@ -220,6 +271,22 @@ function presenceOf(all: readonly Batch[], repos: ReadonlyMap<string, string>): 
   return out;
 }
 
+/**
+ * The call that answered a prompt made at `ts`: the transcript's first call
+ * at or after it, or else its last. `usages` are in the transcript's order,
+ * which is time order.
+ */
+function answerOf(usages: readonly Usage[], ts: number): Usage | null {
+  let lo = 0;
+  let hi = usages.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((usages[mid]?.ts ?? 0) < ts) lo = mid + 1;
+    else hi = mid;
+  }
+  return usages[lo] ?? usages[usages.length - 1] ?? null;
+}
+
 export function buildColumns(batches: Iterable<Batch>): Columns {
   const all = [...batches];
   const repos = resolveRepos(
@@ -233,7 +300,15 @@ export function buildColumns(batches: Iterable<Batch>): Columns {
     const shares = sharesOf(batch.writes);
     return batch.usages.map((usage) => placesOf(batch, usage.cwd, repos, shares));
   });
-  const length = places.reduce((sum, calls) => sum + calls.reduce((n, p) => n + p.length, 0), 0);
+  const prompts = all.map((batch) => {
+    const shares = sharesOf(batch.writes);
+    return (batch.human ?? [])
+      .filter((event) => event.tokens !== undefined)
+      .map((event) => ({ event, places: placesOf(batch, event.cwd, repos, shares) }));
+  });
+  const rowsOf = (lists: (readonly (readonly Place[])[])[]) =>
+    lists.reduce((sum, list) => sum + list.reduce((n, p) => n + p.length, 0), 0);
+  const length = rowsOf(places) + rowsOf(prompts.map((list) => list.map((p) => p.places)));
   const filler = new Filler(length);
   const titles = new Map<string, string>();
   for (const [b, batch] of all.entries()) {
@@ -241,6 +316,9 @@ export function buildColumns(batches: Iterable<Batch>): Columns {
     if (batch.title !== "" && !titles.has(session)) titles.set(session, batch.title);
     for (const [u, usage] of batch.usages.entries()) {
       filler.add(batch, session, usage, places[b]?.[u] ?? NOWHERE);
+    }
+    for (const { event, places: where } of prompts[b] ?? []) {
+      filler.addPrompt(batch, session, event, answerOf(batch.usages, event.ts), where);
     }
   }
   const names = Object.fromEntries(

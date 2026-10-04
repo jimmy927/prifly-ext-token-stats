@@ -61,7 +61,8 @@ export type ScanReply = {
 // 3: transcripts keep the repositories they wrote into; older caches are read again.
 // 4: transcripts keep their weekly-limit refusals; older caches are read again.
 // 5: session transcripts keep the reader's own events, for the active time; older caches are read again.
-const CACHE_VERSION = 5;
+// 6: a prompt the reader wrote keeps its estimated tokens; older caches are read again.
+const CACHE_VERSION = 6;
 const files = new Map<string, FileState>();
 const archive = new Map<string, FileOut>();
 let cache: LocalCache | null = null;

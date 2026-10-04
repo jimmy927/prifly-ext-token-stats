@@ -50,6 +50,8 @@ export const METRICS = [
   ["cacheRead", "Cache reads"],
   ["all", "All tokens"],
   ["calls", "API calls"],
+  ["prompts", "Prompts"],
+  ["promptTokens", "Prompt tokens"],
 ];
 export const METRIC_ROW = {
   cost: "cost",
@@ -58,6 +60,8 @@ export const METRIC_ROW = {
   cacheRead: "cacheRead",
   all: "output",
   calls: "calls",
+  prompts: "prompts",
+  promptTokens: "promptTokens",
 };
 export const KINDS = [
   ["bars", "Bars"],

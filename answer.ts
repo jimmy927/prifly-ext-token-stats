@@ -47,6 +47,9 @@ export type Row = {
   cacheRead: number;
   calls: number;
   sessions: number;
+  /** Prompts the reader wrote, and their estimated tokens (`parse.ts`). */
+  prompts: number;
+  promptTokens: number;
 };
 
 export type Answer = {
@@ -308,25 +311,32 @@ export class Answerer {
     return { bucket, buckets: values.map((_, k) => first + k * bucket), values };
   }
 
+  /** A table row for one value of the split, before anything is added to it. */
+  private emptyRow(split: Dimension | "none", code: number): Row & { sessionSet: Set<number> } {
+    return {
+      key: split === "none" ? "all" : (this.cols.names[split][code] ?? "?"),
+      label: labelOf(this.cols, split, code),
+      slot: this.slotOf(split, code),
+      tone: this.toneOf(split, code),
+      cost: 0,
+      output: 0,
+      input: 0,
+      cacheRead: 0,
+      calls: 0,
+      sessions: 0,
+      prompts: 0,
+      promptTokens: 0,
+      sessionSet: new Set(),
+    };
+  }
+
   private table(inRange: Int32Array, split: Dimension | "none"): Row[] {
     const rows = new Map<number, Row & { sessionSet: Set<number> }>();
     for (const i of inRange) {
       const code = this.codeOf(split, i);
       let row = rows.get(code);
       if (row === undefined) {
-        row = {
-          key: split === "none" ? "all" : (this.cols.names[split][code] ?? "?"),
-          label: labelOf(this.cols, split, code),
-          slot: this.slotOf(split, code),
-          tone: this.toneOf(split, code),
-          cost: 0,
-          output: 0,
-          input: 0,
-          cacheRead: 0,
-          calls: 0,
-          sessions: 0,
-          sessionSet: new Set(),
-        };
+        row = this.emptyRow(split, code);
         rows.set(code, row);
       }
       row.cost += this.cols.cost[i] ?? 0;
@@ -334,6 +344,8 @@ export class Answerer {
       row.input += (this.cols.input[i] ?? 0) + (this.cols.cacheWrite[i] ?? 0);
       row.cacheRead += this.cols.cacheRead[i] ?? 0;
       row.calls += this.cols.share[i] ?? 1;
+      row.prompts += this.cols.prompts[i] ?? 0;
+      row.promptTokens += this.cols.promptTokens[i] ?? 0;
       row.sessionSet.add(this.cols.codes.session[i] ?? 0);
     }
     return [...rows.values()]

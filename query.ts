@@ -7,7 +7,16 @@
 
 import { type Columns, DIMENSIONS, type Dimension } from "./store";
 
-export const METRICS = ["cost", "output", "input", "cacheRead", "all", "calls"] as const;
+export const METRICS = [
+  "cost",
+  "output",
+  "input",
+  "cacheRead",
+  "all",
+  "calls",
+  "prompts",
+  "promptTokens",
+] as const;
 export type Metric = (typeof METRICS)[number];
 
 export type Filters = Partial<Record<Dimension, string[]>>;
@@ -77,8 +86,12 @@ export function metricOf(cols: Columns, metric: Metric, i: number): number {
         (cols.output[i] ?? 0)
       );
     case "calls":
-      // A call split across repositories is one call, in parts.
+      // A call split across repositories is one call, in parts; a prompt's row is none.
       return cols.share[i] ?? 1;
+    case "prompts":
+      return cols.prompts[i] ?? 0;
+    case "promptTokens":
+      return cols.promptTokens[i] ?? 0;
   }
 }
 

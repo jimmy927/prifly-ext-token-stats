@@ -78,6 +78,8 @@ const COLUMNS = [
   { key: "cacheRead", label: "Cache reads", show: fmt },
   { key: "calls", label: "Calls", show: fmt },
   { key: "sessions", label: "Sessions", show: fmt },
+  { key: "prompts", label: "Prompts", show: fmt },
+  { key: "promptTokens", label: "Prompt tokens", show: fmt },
 ];
 
 /** Every value of the split in the shown stretch, not only the charted ones. */

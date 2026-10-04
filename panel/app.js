@@ -189,6 +189,12 @@ function drawCostNote(unpriced) {
   if (state.metric === "cost") {
     parts.push("At API list prices — on a subscription this is value used, not money billed.");
   }
+  if (state.metric === "prompts" || state.metric === "promptTokens") {
+    parts.push(
+      "Prompts you wrote: your own words, without what prifly adds, pasted text, commands or button prompts. Tokens are estimated from the length.",
+    );
+    if (state.split === "model") parts.push("A prompt's model is the one that answered it.");
+  }
   if (unpriced.calls > 0) {
     parts.push(
       `${fmt(unpriced.calls)} calls on unpriced models, in no cost: ${unpriced.models.join(", ")}`,
