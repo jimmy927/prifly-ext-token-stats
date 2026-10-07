@@ -33,7 +33,9 @@ other measure, and the table has a column for each.
   calls, slash commands, `!` shell commands, interrupts, what a button sends
   (a proposal's "Go ahead with", "Give me a status report on this session"),
   and anything in a session run in `/tmp` or queued before a session names
-  its folder — prifly's reviewers, which prifly prompts itself.
+  its folder — prifly's reviewers — or in its summariser's folder
+  (`~/.local/share/prifly/summariser`): sessions prifly prompts itself. Their
+  calls still count in every other measure.
 - Text pasted into a terminal session arrives as typed, with no wrapper, and
   counts as your words. A session another session started with a plain
   prompt (no `<prifly-brief>`) counts its first prompt too.

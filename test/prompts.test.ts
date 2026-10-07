@@ -64,6 +64,8 @@ test("only prompts the reader wrote carry tokens", () => {
       // prifly's own reviewer sessions in /tmp are prompted by prifly.
       user(10, "This session is done. Can you confirm?", "/tmp/claude-1000/x"),
       user(11, "Review the drop.", "/tmp"),
+      // So is prifly's summariser.
+      user(12, "THIS SESSION WORKS IN: /src/x", "/home/u/.local/share/prifly/summariser"),
     ),
   ).toEqual([
     [0, estimateTokens(words)],
@@ -142,6 +144,33 @@ test("a prompt is a row of the measures, on the account and model that answered 
   expect(calls.unpriced.calls).toBe(0);
   const row = calls.rows[0];
   expect([row?.prompts, row?.promptTokens, row?.calls]).toEqual([3, tokens.series[0]?.total, 3]);
+});
+
+test("a summariser prompt cached with tokens is no prompt, and leaves no unknown model", () => {
+  const cols = buildColumns([
+    {
+      sessionId: "s1",
+      title: "t",
+      source: "local",
+      repo: null,
+      usages: [],
+      human: [{ ts: T0, lead: 0, cwd: "/home/u/.local/share/prifly/summariser", tokens: 7547 }],
+    },
+  ]);
+  const answer = new Answerer(cols).answer(
+    readParams(
+      {
+        from: String(T0 - MIN),
+        to: String(T0 + MIN),
+        bucket: "60000",
+        metric: "promptTokens",
+        split: "model",
+      },
+      T0,
+    ),
+    T0,
+  );
+  expect(answer.series).toEqual([]);
 });
 
 test("the archive keeps a prompt's tokens, and an event without them stays without", () => {

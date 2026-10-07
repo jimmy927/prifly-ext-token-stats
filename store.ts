@@ -22,7 +22,7 @@
  * the session the reader replied to next.
  */
 
-import { type HumanEvent, UNKNOWN, type Usage } from "./parse";
+import { type HumanEvent, promptedByPrifly, UNKNOWN, type Usage } from "./parse";
 import { presenceStretches, type TimelineEvent } from "./presence";
 import { costOf, type Price, priceOf } from "./prices";
 import { folderLabel, NO_REPO, resolveRepos } from "./where";
@@ -302,9 +302,12 @@ export function buildColumns(batches: Iterable<Batch>): Columns {
   });
   const prompts = all.map((batch) => {
     const shares = sharesOf(batch.writes);
-    return (batch.human ?? [])
-      .filter((event) => event.tokens !== undefined)
-      .map((event) => ({ event, places: placesOf(batch, event.cwd, repos, shares) }));
+    return (
+      (batch.human ?? [])
+        // Cached and archived events were read before the summariser was left out.
+        .filter((event) => event.tokens !== undefined && !promptedByPrifly(event.cwd))
+        .map((event) => ({ event, places: placesOf(batch, event.cwd, repos, shares) }))
+    );
   });
   const rowsOf = (lists: (readonly (readonly Place[])[])[]) =>
     lists.reduce((sum, list) => sum + list.reduce((n, p) => n + p.length, 0), 0);

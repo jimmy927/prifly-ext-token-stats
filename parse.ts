@@ -327,18 +327,30 @@ function textOf(line: Line): string {
     .join("\n");
 }
 
+/** prifly's summariser, whose sessions run in this folder of the home directory. */
+const SUMMARISER = "/.local/share/prifly/summariser";
+
+/**
+ * Whether a session in folder `cwd` is one prifly prompts itself, so none of
+ * its prompts are the reader's: a reviewer under `/tmp`, the summariser, or a
+ * session whose folder is not known yet (a prompt queued as its first line,
+ * which is prifly starting a reviewer).
+ */
+export function promptedByPrifly(cwd: string): boolean {
+  if (cwd === "" || cwd === "/tmp" || cwd.startsWith("/tmp/")) return true;
+  return cwd.endsWith(SUMMARISER) || cwd.includes(`${SUMMARISER}/`);
+}
+
 /**
  * The estimated tokens of a human event that is a prompt the reader wrote,
  * or null when it is not one: an answer or a refusal (a tool result), a
  * slash or shell command, an interrupt, a button's prompt (`NOT_WRITTEN`),
  * a prompt with no words of the reader's own once prifly's additions are
  * out (a brief from another session, a bare picture), or anything in a
- * session under `/tmp` or before its folder is known — prifly's reviewers,
- * which prifly prompts itself.
+ * session prifly prompts itself (`promptedByPrifly`).
  */
 function promptTokensOf(state: ReaderState, line: Line): number | null {
-  // No folder yet: a prompt queued as a session's first line, which is prifly starting a reviewer.
-  if (state.cwd === "" || state.cwd === "/tmp" || state.cwd.startsWith("/tmp/")) return null;
+  if (promptedByPrifly(state.cwd)) return null;
   if (line["type"] !== "queue-operation") {
     const content = asRecord(line["message"])?.["content"];
     const blocks = Array.isArray(content) ? content.map(asRecord) : [];
