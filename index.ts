@@ -4,7 +4,8 @@
  * repository, folder, local/remote or session.
  *
  * Local sessions are read from `~/.claude/projects` by a worker thread
- * (`scan-worker.ts`); remote ones through prifly's cloud access
+ * (`scan-worker.ts`), with prifly's copy of the other machines' on this
+ * laptop — a WSL distribution's, for a host on Windows; remote ones through prifly's cloud access
  * (`remote.ts`). The window's page (`panel/`) asks `api/stats` for each view
  * and `api/status` for how far the reading has got.
  *
@@ -16,7 +17,7 @@
  */
 
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Answerer, readParams } from "./answer";
 import { applyScan } from "./archive";
 import { codeAnswer, readCodeParams } from "./code-answer";
@@ -203,6 +204,8 @@ export function activate(api: ExtensionApi): () => void {
       cacheFile: join(api.folder, "cache", "local.sqlite"),
       legacyCacheFile: join(api.folder, "cache", "local.json"),
       archiveFile: join(api.folder, "cache", "archive.json"),
+      // `<data>/extensions/<this>`: prifly keeps its copies under `<data>/machine-history`.
+      mirrors: join(dirname(dirname(api.folder)), "machine-history"),
     },
     readings: new Readings(join(api.folder, "cache", "readings.jsonl")),
     log: api.log,
