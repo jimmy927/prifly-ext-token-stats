@@ -30,7 +30,7 @@ import { Readings } from "./readings";
 import { RemoteSessions } from "./remote";
 import type { FileOut, ScanProgress, ScanReply, ScanRequest } from "./scan-worker";
 import { type Batch, buildColumns } from "./store";
-import { checkoutOf, NO_REPO } from "./where";
+import { checkoutOf, homeOf, NO_REPO } from "./where";
 
 const LOCAL_EVERY = 60_000;
 const REMOTE_EVERY = 10 * 60_000;
@@ -67,15 +67,45 @@ type Running = {
 let running: Running | null = null;
 
 function localBatches(state: Running): Batch[] {
-  return [...state.local.values(), ...state.archived.values()].map((file) => ({
-    sessionId: file.sessionId,
-    title: file.title,
-    source: "local",
-    repo: null,
-    usages: file.usages,
-    ...(file.writes === undefined ? {} : { writes: file.writes }),
-    ...(file.human === undefined ? {} : { human: file.human }),
-  }));
+  const files = [...state.local.values(), ...state.archived.values()];
+  const homes = mirrorHomes(state.request.mirrors, files);
+  return files.map((file) => {
+    const home = homes.get(machineOf(state.request.mirrors, file.path) ?? "");
+    return {
+      sessionId: file.sessionId,
+      title: file.title,
+      source: "local",
+      repo: null,
+      usages: file.usages,
+      ...(file.writes === undefined ? {} : { writes: file.writes }),
+      ...(file.human === undefined ? {} : { human: file.human }),
+      ...(home === undefined ? {} : { home }),
+    };
+  });
+}
+
+/** The folder under `mirrors` of the machine whose copied history holds `path`; null for this machine's own. */
+function machineOf(mirrors: string | undefined, path: string): string | null {
+  if (mirrors === undefined || !path.startsWith(mirrors)) return null;
+  return path.slice(mirrors.length + 1).split(/[\\/]/)[0] || null;
+}
+
+/** Each copied machine's home folder, from the folders its calls ran in. */
+function mirrorHomes(mirrors: string | undefined, files: FileOut[]): Map<string, string> {
+  const cwds = new Map<string, string[]>();
+  for (const file of files) {
+    const machine = machineOf(mirrors, file.path);
+    if (machine === null) continue;
+    const list = cwds.get(machine) ?? [];
+    for (const usage of file.usages) list.push(usage.cwd);
+    cwds.set(machine, list);
+  }
+  const homes = new Map<string, string>();
+  for (const [machine, list] of cwds) {
+    const home = homeOf(list);
+    if (home !== null) homes.set(machine, home);
+  }
+  return homes;
 }
 
 function answerer(state: Running): Answerer {

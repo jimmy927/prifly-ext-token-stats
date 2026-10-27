@@ -21,11 +21,35 @@ const HOME = homedir();
 /** The repository of a folder that is in none. */
 export const NO_REPO = "(no repository)";
 
-/** `/home/jimmy/src/odi` as `~/src/odi`. */
-export function folderLabel(cwd: string): string {
+/**
+ * `/home/jimmy/src/odi` as `~/src/odi`. `home` is the home folder of the
+ * machine the call ran on: this one's, or another machine's whose history
+ * prifly copied here (`homeOf`).
+ */
+export function folderLabel(cwd: string, home: string = HOME): string {
   if (cwd === "") return "unknown";
-  if (cwd === HOME) return "~";
-  return cwd.startsWith(`${HOME}/`) ? `~${cwd.slice(HOME.length)}` : cwd;
+  if (cwd === home) return "~";
+  // Either separator: a host on Windows has `C:\Users\jimmy\src`.
+  const next = cwd[home.length];
+  return cwd.startsWith(home) && (next === "/" || next === "\\")
+    ? `~${cwd.slice(home.length)}`
+    : cwd;
+}
+
+/**
+ * The home folder most of a machine's calls ran under, `/home/<user>` or
+ * `/root`; null where none did. For the copy of another machine's history,
+ * whose home this host cannot ask: a WSL distribution's, for a host on Windows.
+ */
+export function homeOf(cwds: Iterable<string>): string | null {
+  const counts = new Map<string, number>();
+  for (const cwd of cwds) {
+    const home = /^(\/home\/[^/]+|\/root)(\/|$)/.exec(cwd)?.[1];
+    if (home !== undefined) counts.set(home, (counts.get(home) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  for (const [home, n] of counts) if (best === null || n > (counts.get(best) ?? 0)) best = home;
+  return best;
 }
 
 /** The main checkout a `.git` file points back to, or null for a plain repository. */

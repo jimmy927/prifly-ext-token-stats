@@ -42,6 +42,8 @@ export type Batch = {
   writes?: Readonly<Record<string, number>>;
   /** The reader's events in a session's own transcript: the active time (`presence.ts`). */
   human?: readonly HumanEvent[];
+  /** The home folder of the machine it ran on, where that is not this one (`folderLabel`). */
+  home?: string;
 };
 
 /**
@@ -223,7 +225,7 @@ class Filler {
     codes.model[i] = interners.model.code(model);
     codes.repo[i] = interners.repo.code(repo);
     codes.folder[i] = interners.folder.code(
-      batch.source === "remote" ? `cloud: ${cwd || "?"}` : folderLabel(cwd),
+      batch.source === "remote" ? `cloud: ${cwd || "?"}` : folderLabel(cwd, batch.home),
     );
     codes.source[i] = interners.source.code(batch.source);
     codes.session[i] = interners.session.code(session);
