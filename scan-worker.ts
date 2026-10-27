@@ -41,6 +41,15 @@ export type ScanRequest = {
    */
   mirrors?: string;
 };
+/**
+ * How far a long scan has got, sent every `PROGRESS_EVERY` while it reads:
+ * the first, with a machine's whole history to read (9.3 GB of WSL's on
+ * 2026-10-27), takes minutes.
+ */
+export type ScanProgress = { type: "progress"; done: number; of: number; bytes: number };
+
+const PROGRESS_EVERY = 500;
+
 export type ScanReply = {
   type: "scanned";
   /** Files that changed since the last reply — all of them in the first. */
@@ -216,12 +225,17 @@ async function scan(request: ScanRequest): Promise<ScanReply> {
   ];
   const changed: FileOut[] = [];
   let bytes = 0;
-  for (const path of candidates) {
+  let toldAt = performance.now();
+  for (const [at, path] of candidates.entries()) {
     const read = await readFile(path).catch(() => 0);
     const state = files.get(path);
     if (state !== undefined && state.parentId === null) bySession.set(state.sessionId, state);
     if (state !== undefined && (read > 0 || first)) changed.push(strip(state));
     bytes += read;
+    if (performance.now() - toldAt >= PROGRESS_EVERY) {
+      toldAt = performance.now();
+      self.postMessage({ type: "progress", done: at + 1, of: candidates.length, bytes });
+    }
   }
   const present = new Set(candidates);
   const removed = [...files.keys()].filter((path) => {

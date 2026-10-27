@@ -28,7 +28,7 @@ import { limitWeight, reconstructPast, withPast } from "./past";
 import type { ExtensionApi, PanelRequest } from "./prifly-api";
 import { Readings } from "./readings";
 import { RemoteSessions } from "./remote";
-import type { FileOut, ScanReply, ScanRequest } from "./scan-worker";
+import type { FileOut, ScanProgress, ScanReply, ScanRequest } from "./scan-worker";
 import { type Batch, buildColumns } from "./store";
 import { checkoutOf, NO_REPO } from "./where";
 
@@ -47,6 +47,8 @@ type Running = {
   scanning: Promise<void> | null;
   resolveScan: (() => void) | null;
   lastScan: ScanReply["stats"] | null;
+  /** How far the scan under way has read; null between scans, and in one too short to tell. */
+  progress: ScanProgress | null;
   scannedAt: number;
   request: ScanRequest;
   readings: Readings;
@@ -116,6 +118,7 @@ function scanLocal(state: Running): Promise<void> {
 function received(state: Running, reply: ScanReply, log: ExtensionApi["log"]): void {
   if (applyScan(state.local, state.archived, reply)) state.answerer = null;
   state.lastScan = reply.stats;
+  state.progress = null;
   state.scannedAt = Date.now();
   log("scanned", reply.stats);
   state.scanning = null;
@@ -197,6 +200,7 @@ export function activate(api: ExtensionApi): () => void {
     scanning: null,
     resolveScan: null,
     lastScan: null,
+    progress: null,
     scannedAt: 0,
     request: {
       type: "scan",
@@ -215,10 +219,14 @@ export function activate(api: ExtensionApi): () => void {
     // A host older than the contract's `accounts()` has no such function.
     accounts: typeof api.accounts === "function" ? () => api.accounts() : null,
   };
-  worker.onmessage = (event: MessageEvent<ScanReply>) => received(state, event.data, api.log);
+  worker.onmessage = (event: MessageEvent<ScanReply | ScanProgress>) => {
+    if (event.data.type === "progress") state.progress = event.data;
+    else received(state, event.data, api.log);
+  };
   worker.onerror = (event) => {
     api.log("scan_failed", { error: event.message });
     state.scanning = null;
+    state.progress = null;
     state.resolveScan?.();
   };
   running = state;
@@ -244,6 +252,7 @@ function status(state: Running) {
   return {
     ready: state.lastScan !== null,
     scanning: state.scanning !== null,
+    progress: state.progress,
     scannedAt: state.scannedAt,
     local: state.lastScan,
     sessions: state.local.size,

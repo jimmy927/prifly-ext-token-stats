@@ -370,6 +370,14 @@ function controls() {
   );
 }
 
+/** ": 1,234 of 8,277 · 2.1 GB" while a long scan reads; "…" for a short one. */
+function progressOf(p) {
+  if (!p) return "…";
+  const gb = p.bytes / 1e9;
+  const read = gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(p.bytes / 1e6)} MB`;
+  return `: ${p.done.toLocaleString("en-US")} of ${p.of.toLocaleString("en-US")} · ${read}`;
+}
+
 async function status(poll) {
   const node = document.getElementById("status");
   try {
@@ -382,8 +390,8 @@ async function status(poll) {
         : ` · ${s.remote.sessions.toLocaleString("en-US")} remote`;
     const archived = ` · ${s.archived.toLocaleString("en-US")} archived`;
     node.textContent = s.ready
-      ? `${s.sessions.toLocaleString("en-US")} transcripts${archived}${remote}${s.scanning ? " · reading…" : ""}`
-      : "Reading your transcripts for the first time…";
+      ? `${s.sessions.toLocaleString("en-US")} transcripts${archived}${remote}${s.scanning ? ` · reading${progressOf(s.progress)}` : ""}`
+      : `Reading your transcripts for the first time${progressOf(s.progress)}`;
     if (poll && (!s.ready || s.scanning)) setTimeout(() => void status(true), 2000);
   } catch {
     node.textContent = "The extension did not answer.";
