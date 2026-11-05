@@ -9,6 +9,7 @@
  */
 
 import { isCode } from "./code-filter";
+import { wslTarget } from "./wsl";
 
 /** When a commit was made (ms) and the lines of code it added. */
 export type Commit = readonly [ts: number, lines: number];
@@ -18,8 +19,16 @@ export class GitFailed extends Error {}
 
 type Ran = { ok: boolean; out: string };
 
+/** A checkout inside WSL is read by the distribution's own git (`wsl.ts`). */
+function command(path: string, args: readonly string[]): string[] {
+  const wsl = wslTarget(path);
+  return wsl === null
+    ? ["git", "-C", path, ...args]
+    : ["wsl.exe", "-d", wsl.distro, "--", "git", "-C", wsl.posix, ...args];
+}
+
 async function git(path: string, args: readonly string[]): Promise<Ran> {
-  const proc = Bun.spawn(["git", "-C", path, ...args], {
+  const proc = Bun.spawn(command(path, args), {
     stdout: "pipe",
     stderr: "ignore",
     stdin: "ignore",
@@ -48,6 +57,13 @@ export async function defaultBranch(path: string): Promise<string | null> {
 export async function tipOf(path: string, branch: string): Promise<string | null> {
   const ran = await git(path, ["rev-parse", "--verify", "--quiet", `${branch}^{commit}`]);
   return ran.ok ? ran.out.trim() : null;
+}
+
+/** When a branch's tip was committed (ms), or null where it has none. */
+export async function tipTime(path: string, branch: string): Promise<number | null> {
+  const ran = await git(path, ["log", "-1", "--format=%ct", branch]);
+  const seconds = Number(ran.out.trim());
+  return ran.ok && ran.out.trim() !== "" && Number.isFinite(seconds) ? seconds * 1000 : null;
 }
 
 /** Whether `older` is in `newer`'s history: false too where git does not know `older` any more. */

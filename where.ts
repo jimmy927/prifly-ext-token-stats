@@ -10,11 +10,15 @@
  * A folder in no repository at all (`~/src`, the home folder, a scratchpad)
  * is `NO_REPO`, never the folder's name: `store.ts` then places its calls by
  * the files the session wrote (`repoOfPath`).
+ *
+ * A WSL session's folder (`/home/jimmy/src/odi`) is looked at through
+ * `\\wsl.localhost\` when this host is Windows (`wsl.ts`).
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { besides, hostPath } from "./wsl";
 
 const HOME = homedir();
 
@@ -35,7 +39,8 @@ function mainOfWorktree(gitFile: string): string | null {
   if (gitdir === undefined) return null;
   // <main>/.git/worktrees/<name>
   const at = gitdir.indexOf("/.git/worktrees/");
-  return at < 0 ? null : gitdir.slice(0, at);
+  // A WSL worktree names its main checkout by the distribution's own path.
+  return at < 0 ? null : besides(gitFile, gitdir.slice(0, at));
 }
 
 /** The repository's top folder, walking up from `cwd`; null outside any. */
@@ -98,14 +103,17 @@ function noteCheckout(name: string, top: string): void {
 }
 
 /**
- * The main checkout of a repository by name, for reading its git history;
- * null where this machine has none. Of several clones of one repository
- * (`~/src/odi`, `odi3`, `odi5`) the one whose folder is the bare name; else
- * the first by path. A repository never seen as a folder here (a session
- * outside it only wrote into it, or a cloud session ran in it) is looked for
- * at `~/src/<name>`, when that has this name as its origin.
+ * The main checkouts of a repository by name, for reading its git history;
+ * empty where this machine has none. Of several clones of one repository
+ * (`~/src/odi`, `odi3`, `odi5`) the ones whose folder is the bare name come
+ * first, then by path; `git-cache.ts` reads the one whose default branch is
+ * newest, since a clone left unfetched (a Windows `~/src/odi` beside the WSL
+ * one worked in) stopped where it was last pulled. A repository never seen
+ * as a folder here (a session outside it only wrote into it, or a cloud
+ * session ran in it) is looked for at `~/src/<name>`, when that has this
+ * name as its origin.
  */
-export function checkoutOf(name: string): string | null {
+export function checkoutsOf(name: string): string[] {
   const found = new Set(CHECKOUTS.get(name));
   const conventional = join(HOME, "src", name);
   if (existsSync(join(conventional, ".git")) && originName(conventional) === name) {
@@ -115,14 +123,20 @@ export function checkoutOf(name: string): string | null {
   const best = [...found]
     .filter((path) => existsSync(join(path, ".git")))
     .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : 1));
-  return best[0] ?? null;
+  return best;
+}
+
+/** The first of `checkoutsOf`, or null. */
+export function checkoutOf(name: string): string | null {
+  return checkoutsOf(name)[0] ?? null;
 }
 
 /** A folder that still exists, by its git origin; null for one that is gone or unreadable. */
 function liveRepo(cwd: string): string | null {
   try {
-    if (!existsSync(cwd)) return null;
-    const top = gitTop(cwd);
+    const here = hostPath(cwd);
+    if (!existsSync(here)) return null;
+    const top = gitTop(here);
     if (top !== null) return nameOf(top);
     // What is left of a removed worktree (`x.worktrees/y` without its `.git`) is still x's.
     return repoOfPath(cwd) ?? NO_REPO;
@@ -165,13 +179,14 @@ export function resolveRepos(cwds: Iterable<string>): Map<string, string> {
  */
 export function repoOfPath(path: string): string | null {
   try {
-    let there = path;
+    let there = hostPath(path);
     while (there !== dirname(there) && !existsSync(there)) there = dirname(there);
     const top = gitTop(there);
     if (top !== null) return nameOf(top);
     const main = worktreeMain(path);
     if (main === null) return null;
-    const mainTop = existsSync(main) ? gitTop(main) : null;
+    const mainHere = hostPath(main);
+    const mainTop = existsSync(mainHere) ? gitTop(mainHere) : null;
     return mainTop === null ? basename(main) : nameOf(mainTop);
   } catch {
     // Unreadable on the way up (permissions, a racing delete): nothing to go by.

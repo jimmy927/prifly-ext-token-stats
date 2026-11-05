@@ -128,13 +128,13 @@ test("a new commit is read on its own and equals a full read", async () => {
   const dir = history();
   const file = join(tempDir(), "git.json");
   const cached = new GitLines(file);
-  await cached.refresh(new Map([["r", dir]]), noLog);
+  await cached.refresh(new Map([["r", [dir]]]), noLog);
   expect(cached.lines("r")?.length).toBe(4);
   write(dir, "e.ts", lines(3, "e"));
   commit(dir, "2026-01-07", "c5");
-  await cached.refresh(new Map([["r", dir]]), noLog);
+  await cached.refresh(new Map([["r", [dir]]]), noLog);
   const fresh = new GitLines(join(tempDir(), "git.json"));
-  await fresh.refresh(new Map([["r", dir]]), noLog);
+  await fresh.refresh(new Map([["r", [dir]]]), noLog);
   expect(cached.lines("r")).toEqual(fresh.lines("r") ?? []);
   expect(cached.lines("r")?.at(-1)).toEqual([at("2026-01-07"), 3]);
   // The file on disk is what a restart starts from.
@@ -146,13 +146,13 @@ test("a new commit is read on its own and equals a full read", async () => {
 test("a branch rewritten under the cache is read again from the start", async () => {
   const dir = history();
   const cached = new GitLines(join(tempDir(), "git.json"));
-  await cached.refresh(new Map([["r", dir]]), noLog);
+  await cached.refresh(new Map([["r", [dir]]]), noLog);
   git(dir, "2026-01-08", "reset", "-q", "--hard", "HEAD~2");
   write(dir, "f.ts", lines(5, "f"));
   commit(dir, "2026-01-08", "c6");
-  await cached.refresh(new Map([["r", dir]]), noLog);
+  await cached.refresh(new Map([["r", [dir]]]), noLog);
   const fresh = new GitLines(join(tempDir(), "git.json"));
-  await fresh.refresh(new Map([["r", dir]]), noLog);
+  await fresh.refresh(new Map([["r", [dir]]]), noLog);
   expect(cached.lines("r")).toEqual(fresh.lines("r") ?? []);
   expect(cached.lines("r")).toEqual([
     [at("2026-01-01"), 6],
@@ -164,11 +164,23 @@ test("a branch rewritten under the cache is read again from the start", async ()
 test("a repository without a checkout has no lines", async () => {
   const dir = history();
   const cached = new GitLines(join(tempDir(), "git.json"));
-  await cached.refresh(new Map([["r", dir]]), noLog);
+  await cached.refresh(new Map([["r", [dir]]]), noLog);
   expect(cached.lines("cloud-only")).toBeNull();
   // Its checkout gone (or with no default branch): nothing to count.
-  await cached.refresh(new Map([["r", join(dir, "nowhere")]]), noLog);
+  await cached.refresh(new Map([["r", [join(dir, "nowhere")]]]), noLog);
   expect(cached.lines("r")).toBeNull();
+});
+
+test("of two clones, the one whose default branch is newer is read", async () => {
+  const stale = history();
+  const live = tempDir();
+  git(live, "2026-01-01", "clone", "-q", stale, live);
+  write(live, "g.ts", lines(4, "g"));
+  commit(live, "2026-02-01", "c7");
+  const cached = new GitLines(join(tempDir(), "git.json"));
+  // The stale clone listed first, as a clone named for the repository would be.
+  await cached.refresh(new Map([["r", [stale, live]]]), noLog);
+  expect(cached.lines("r")?.at(-1)).toEqual([at("2026-02-01"), 4]);
 });
 
 test("parseLog reads renames, binary files and empty commits", () => {

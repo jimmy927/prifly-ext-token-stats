@@ -29,7 +29,7 @@ import { Readings } from "./readings";
 import { RemoteSessions } from "./remote";
 import type { FileOut, ScanReply, ScanRequest } from "./scan-worker";
 import { type Batch, buildColumns } from "./store";
-import { checkoutOf, NO_REPO } from "./where";
+import { checkoutsOf, NO_REPO } from "./where";
 
 const LOCAL_EVERY = 60_000;
 const REMOTE_EVERY = 10 * 60_000;
@@ -88,10 +88,10 @@ function answerer(state: Running): Answerer {
 function readGit(state: Running): Promise<void> {
   if (state.gitReading !== null) return state.gitReading;
   const started = Date.now();
-  const checkouts = new Map<string, string>();
+  const checkouts = new Map<string, string[]>();
   for (const name of answerer(state).values("repo")) {
-    const path = name === NO_REPO ? null : checkoutOf(name);
-    if (path !== null) checkouts.set(name, path);
+    const paths = name === NO_REPO ? [] : checkoutsOf(name);
+    if (paths.length > 0) checkouts.set(name, paths);
   }
   state.gitReading = state.git
     .refresh(checkouts, state.log)

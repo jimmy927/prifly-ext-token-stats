@@ -9,11 +9,21 @@
 import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 import { FILTER_VERSION } from "./code-filter";
-import { type Commit, commitsIn, defaultBranch, GitFailed, isAncestor, tipOf } from "./git";
+import {
+  type Commit,
+  commitsIn,
+  defaultBranch,
+  GitFailed,
+  isAncestor,
+  tipOf,
+  tipTime,
+} from "./git";
 import { stampOf } from "./git-stamp";
 import type { ExtensionApi } from "./prifly-api";
 
 const CACHE_VERSION = 1;
+/** How long the choice among a repository's clones stands. */
+const CHOOSE_EVERY = 10 * 60_000;
 
 export type RepoLines = {
   path: string;
@@ -69,6 +79,8 @@ export class GitLines implements LinesSource {
    * was last read. In memory only: a restart reads every repository once.
    */
   private stamps = new Map<string, { path: string; stamp: string }>();
+  /** The clone `choose` picked for each repository, among which, and when. */
+  private chosen = new Map<string, { among: string; path: string; at: number }>();
 
   private readonly file: string;
 
@@ -110,12 +122,16 @@ export class GitLines implements LinesSource {
    * light on a repository, but a first read of a long history is not to run
    * beside others. A repository git cannot read this time keeps what it had.
    */
-  async refresh(checkouts: ReadonlyMap<string, string>, log: ExtensionApi["log"]): Promise<void> {
+  async refresh(
+    checkouts: ReadonlyMap<string, readonly string[]>,
+    log: ExtensionApi["log"],
+  ): Promise<void> {
     await this.load();
     let changed = false;
-    for (const [name, path] of checkouts) {
+    for (const [name, paths] of checkouts) {
       try {
-        changed = (await this.refreshOne(name, path)) || changed;
+        const path = await this.choose(name, paths);
+        if (path !== null) changed = (await this.refreshOne(name, path)) || changed;
       } catch (error) {
         if (!(error instanceof GitFailed)) throw error;
         log("git_failed", { repo: name, error: error.message });
@@ -123,6 +139,27 @@ export class GitLines implements LinesSource {
     }
     this.readThisRun = true;
     if (changed) await this.save();
+  }
+
+  /**
+   * Of a repository's clones, the one whose default branch was committed to
+   * last: one left unfetched has stopped where it was last pulled. Asked of
+   * git again every `CHOOSE_EVERY`, or when the clones seen change.
+   */
+  private async choose(name: string, paths: readonly string[]): Promise<string | null> {
+    if (paths.length <= 1) return paths[0] ?? null;
+    const among = paths.join("\n");
+    const known = this.chosen.get(name);
+    if (known?.among === among && Date.now() - known.at < CHOOSE_EVERY) return known.path;
+    let best: { path: string; ts: number } | null = null;
+    for (const path of paths) {
+      const branch = await defaultBranch(path);
+      const ts = branch === null ? null : await tipTime(path, branch);
+      if (ts !== null && (best === null || ts > best.ts)) best = { path, ts };
+    }
+    const path = best?.path ?? paths[0] ?? null;
+    if (path !== null) this.chosen.set(name, { among, path, at: Date.now() });
+    return path;
   }
 
   /** True when the repository's lines changed. */

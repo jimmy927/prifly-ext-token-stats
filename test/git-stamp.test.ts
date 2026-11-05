@@ -70,7 +70,7 @@ const noLog = () => {};
 test("a second refresh with no ref change runs no git", async () => {
   const dir = repo();
   const cached = new GitLines(join(tempDir(), "git.json"));
-  const checkouts = new Map([["r", dir]]);
+  const checkouts = new Map([["r", [dir]]]);
   expect(await spawned(() => cached.refresh(checkouts, noLog))).toBeGreaterThan(0);
   expect(await spawned(() => cached.refresh(checkouts, noLog))).toBe(0);
   expect(cached.lines("r")?.length).toBe(1);
@@ -79,7 +79,7 @@ test("a second refresh with no ref change runs no git", async () => {
 test("a new commit on the default branch is read", async () => {
   const dir = repo();
   const cached = new GitLines(join(tempDir(), "git.json"));
-  const checkouts = new Map([["r", dir]]);
+  const checkouts = new Map([["r", [dir]]]);
   await cached.refresh(checkouts, noLog);
   commit(dir, "b.ts");
   // Just made: within the second where an mtime cannot tell, so it is read whatever.
@@ -99,7 +99,7 @@ test("a fetch that moves origin is read", async () => {
   git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master");
   age(join(dir, ".git"));
   const cached = new GitLines(join(tempDir(), "git.json"));
-  const checkouts = new Map([["r", dir]]);
+  const checkouts = new Map([["r", [dir]]]);
   await cached.refresh(checkouts, noLog);
   expect(await spawned(() => cached.refresh(checkouts, noLog))).toBe(0);
   const before = cached.lines("r")?.length;
