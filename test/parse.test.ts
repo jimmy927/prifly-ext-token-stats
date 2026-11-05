@@ -97,14 +97,13 @@ test("a repository URL is named by its last part", () => {
   expect(repoOfUrl("git@github.com:jimmy927/prifly-ext-sentry.git")).toBe("prifly-ext-sentry");
 });
 
-test("a deleted clone is the repository its name, less a number, names", () => {
+test("a deleted clone is known by its own name", () => {
   const repos = resolveRepos([
     "/nowhere/odi3",
     "/nowhere/odi2.worktrees/x",
     "/nowhere/web3",
     "/tmp",
   ]);
-  // Nothing live here is called odi or web: the names stand.
   expect(repos.get("/nowhere/odi3")).toBe("odi3");
   expect(repos.get("/nowhere/web3")).toBe("web3");
 });

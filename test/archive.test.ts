@@ -198,3 +198,50 @@ test("the worker archives a deleted transcript, keeps it without the live cache,
   expect(totalOutput(live, archive)).toBe(12);
   again.terminate();
 });
+
+test("prifly's copy of another machine's history is read as a root of its own, and archived when it goes", async () => {
+  const dir = tempDir();
+  const root = join(dir, "projects");
+  const mirrors = join(dir, "machine-history");
+  const copy = join(mirrors, "wsl-ubuntu", "projects");
+  mkdirSync(join(root, "proj"), { recursive: true });
+  mkdirSync(join(copy, "proj", "s", "subagents"), { recursive: true });
+  // A machine folder without `projects` is no root.
+  mkdirSync(join(mirrors, "empty"));
+  const a = join(root, "proj", "a.jsonl");
+  const s = join(copy, "proj", "s.jsonl");
+  const agent = join(copy, "proj", "s", "subagents", "agent-1.jsonl");
+  writeFileSync(a, `${line("m1", 5)}\n`);
+  writeFileSync(s, `${line("m2", 7)}\n`);
+  writeFileSync(agent, `${line("m3", 11)}\n`);
+  const request: ScanRequest = {
+    type: "scan",
+    root,
+    cacheFile: join(dir, "cache", "local.sqlite"),
+    legacyCacheFile: join(dir, "cache", "local.json"),
+    archiveFile: join(dir, "cache", "archive.json"),
+    mirrors,
+  };
+  const live = new Map<string, FileOut>();
+  const archive = new Map<string, FileOut>();
+  const worker = new Worker(new URL("../scan-worker.ts", import.meta.url).href);
+  const first = await scanWith(worker, request);
+  applyScan(live, archive, first);
+  expect(first.stats.mirrored).toBe(2);
+  expect(totalOutput(live, archive)).toBe(23);
+  expect(live.get(agent)).toMatchObject({ sessionId: "s/agent-1", parentId: "s" });
+
+  // Claude Code cleaned the session up in WSL, and prifly's copy followed.
+  rmSync(join(copy, "proj"), { recursive: true });
+  const second = await scanWith(worker, request);
+  expect(second.archived.map((f) => f.path).sort()).toEqual([agent, s].sort());
+  applyScan(live, archive, second);
+  expect(totalOutput(live, archive)).toBe(23);
+
+  // No copies at all (the node agent off): the archive still counts them, and the local root reads on.
+  rmSync(mirrors, { recursive: true });
+  const third = await scanWith(worker, request);
+  applyScan(live, archive, third);
+  expect([live.size, archive.size]).toEqual([1, 2]);
+  worker.terminate();
+});

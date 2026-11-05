@@ -148,11 +148,16 @@ export class Transcripts {
 export function missedBy(root: string, flagged: ReadonlySet<string>, changed: string[]): number {
   return changed.filter((path) => {
     // A new folder is named once, for everything created in it.
-    for (let at = path.length; at > root.length; at = path.lastIndexOf("/", at - 1)) {
+    for (let at = path.length; at > root.length; at = lastSep(path, at - 1)) {
       if (flagged.has(path.slice(root.length + 1, at))) return false;
     }
     return true;
   }).length;
+}
+
+/** The last `/`, or `\` on Windows, at or before `at`. */
+function lastSep(path: string, at: number): number {
+  return Math.max(path.lastIndexOf("/", at), path.lastIndexOf("\\", at));
 }
 
 function emptyFound(): Found {
@@ -161,7 +166,8 @@ function emptyFound(): Found {
 
 function add(found: Found, path: string): void {
   if (!path.endsWith(".jsonl")) return;
-  (path.includes("/subagents/") ? found.agents : found.main).add(path);
+  // Either separator: on Windows the paths have `\`.
+  (/[\\/]subagents[\\/]/.test(path) ? found.agents : found.main).add(path);
 }
 
 function listed(found: Found) {

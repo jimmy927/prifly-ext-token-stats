@@ -4,7 +4,8 @@
  * repository, folder, local/remote or session.
  *
  * Local sessions are read from `~/.claude/projects` by a worker thread
- * (`scan-worker.ts`); remote ones through prifly's cloud access
+ * (`scan-worker.ts`), with prifly's copy of the other machines' on this
+ * laptop — a WSL distribution's, for a host on Windows; remote ones through prifly's cloud access
  * (`remote.ts`). The window's page (`panel/`) asks `api/stats` for each view
  * and `api/status` for how far the reading has got.
  *
@@ -16,7 +17,7 @@
  */
 
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Answerer, readParams } from "./answer";
 import { applyScan } from "./archive";
 import { codeAnswer, readCodeParams } from "./code-answer";
@@ -27,9 +28,9 @@ import { limitWeight, reconstructPast, withPast } from "./past";
 import type { ExtensionApi, PanelRequest } from "./prifly-api";
 import { Readings } from "./readings";
 import { RemoteSessions } from "./remote";
-import type { FileOut, ScanReply, ScanRequest } from "./scan-worker";
+import type { FileOut, ScanProgress, ScanReply, ScanRequest } from "./scan-worker";
 import { type Batch, buildColumns } from "./store";
-import { checkoutsOf, NO_REPO } from "./where";
+import { checkoutsOf, homeOf, NO_REPO } from "./where";
 
 const LOCAL_EVERY = 60_000;
 const REMOTE_EVERY = 10 * 60_000;
@@ -46,6 +47,8 @@ type Running = {
   scanning: Promise<void> | null;
   resolveScan: (() => void) | null;
   lastScan: ScanReply["stats"] | null;
+  /** How far the scan under way has read; null between scans, and in one too short to tell. */
+  progress: ScanProgress | null;
   scannedAt: number;
   request: ScanRequest;
   readings: Readings;
@@ -64,15 +67,45 @@ type Running = {
 let running: Running | null = null;
 
 function localBatches(state: Running): Batch[] {
-  return [...state.local.values(), ...state.archived.values()].map((file) => ({
-    sessionId: file.sessionId,
-    title: file.title,
-    source: "local",
-    repo: null,
-    usages: file.usages,
-    ...(file.writes === undefined ? {} : { writes: file.writes }),
-    ...(file.human === undefined ? {} : { human: file.human }),
-  }));
+  const files = [...state.local.values(), ...state.archived.values()];
+  const homes = mirrorHomes(state.request.mirrors, files);
+  return files.map((file) => {
+    const home = homes.get(machineOf(state.request.mirrors, file.path) ?? "");
+    return {
+      sessionId: file.sessionId,
+      title: file.title,
+      source: "local",
+      repo: null,
+      usages: file.usages,
+      ...(file.writes === undefined ? {} : { writes: file.writes }),
+      ...(file.human === undefined ? {} : { human: file.human }),
+      ...(home === undefined ? {} : { home }),
+    };
+  });
+}
+
+/** The folder under `mirrors` of the machine whose copied history holds `path`; null for this machine's own. */
+function machineOf(mirrors: string | undefined, path: string): string | null {
+  if (mirrors === undefined || !path.startsWith(mirrors)) return null;
+  return path.slice(mirrors.length + 1).split(/[\\/]/)[0] || null;
+}
+
+/** Each copied machine's home folder, from the folders its calls ran in. */
+function mirrorHomes(mirrors: string | undefined, files: FileOut[]): Map<string, string> {
+  const cwds = new Map<string, string[]>();
+  for (const file of files) {
+    const machine = machineOf(mirrors, file.path);
+    if (machine === null) continue;
+    const list = cwds.get(machine) ?? [];
+    for (const usage of file.usages) list.push(usage.cwd);
+    cwds.set(machine, list);
+  }
+  const homes = new Map<string, string>();
+  for (const [machine, list] of cwds) {
+    const home = homeOf(list);
+    if (home !== null) homes.set(machine, home);
+  }
+  return homes;
 }
 
 function answerer(state: Running): Answerer {
@@ -115,6 +148,7 @@ function scanLocal(state: Running): Promise<void> {
 function received(state: Running, reply: ScanReply, log: ExtensionApi["log"]): void {
   if (applyScan(state.local, state.archived, reply)) state.answerer = null;
   state.lastScan = reply.stats;
+  state.progress = null;
   state.scannedAt = Date.now();
   log("scanned", reply.stats);
   state.scanning = null;
@@ -196,6 +230,7 @@ export function activate(api: ExtensionApi): () => void {
     scanning: null,
     resolveScan: null,
     lastScan: null,
+    progress: null,
     scannedAt: 0,
     request: {
       type: "scan",
@@ -203,6 +238,8 @@ export function activate(api: ExtensionApi): () => void {
       cacheFile: join(api.folder, "cache", "local.sqlite"),
       legacyCacheFile: join(api.folder, "cache", "local.json"),
       archiveFile: join(api.folder, "cache", "archive.json"),
+      // `<data>/extensions/<this>`: prifly keeps its copies under `<data>/machine-history`.
+      mirrors: join(dirname(dirname(api.folder)), "machine-history"),
     },
     readings: new Readings(join(api.folder, "cache", "readings.jsonl")),
     log: api.log,
@@ -212,10 +249,14 @@ export function activate(api: ExtensionApi): () => void {
     // A host older than the contract's `accounts()` has no such function.
     accounts: typeof api.accounts === "function" ? () => api.accounts() : null,
   };
-  worker.onmessage = (event: MessageEvent<ScanReply>) => received(state, event.data, api.log);
+  worker.onmessage = (event: MessageEvent<ScanReply | ScanProgress>) => {
+    if (event.data.type === "progress") state.progress = event.data;
+    else received(state, event.data, api.log);
+  };
   worker.onerror = (event) => {
     api.log("scan_failed", { error: event.message });
     state.scanning = null;
+    state.progress = null;
     state.resolveScan?.();
   };
   running = state;
@@ -241,6 +282,7 @@ function status(state: Running) {
   return {
     ready: state.lastScan !== null,
     scanning: state.scanning !== null,
+    progress: state.progress,
     scannedAt: state.scannedAt,
     local: state.lastScan,
     sessions: state.local.size,

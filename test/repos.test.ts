@@ -229,6 +229,10 @@ test("a repository's name gives its main checkout, the clone named for it first"
   // The one named for the repository once seen, whichever was seen first.
   resolveRepos([odi]);
   expect(checkoutOf("tokstat-odi")).toBe(odi);
+  // A deleted clone keeps its own name, though its name less the number is a repository here.
+  expect(resolveRepos([odi, "/nowhere/tokstat-odi4"]).get("/nowhere/tokstat-odi4")).toBe(
+    "tokstat-odi4",
+  );
   // None here: a cloud-only repository.
   expect(checkoutOf("tokstat-nowhere")).toBeNull();
 });
