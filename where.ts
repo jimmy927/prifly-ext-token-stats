@@ -158,10 +158,29 @@ export function checkoutOf(name: string): string | null {
   return checkoutsOf(name)[0] ?? null;
 }
 
+/**
+ * Each WSL folder's repository, looked at once through `\\wsl.localhost` for
+ * as long as the extension runs: a session's folder does not change
+ * repository. A look is several file checks over 9P, ~8 ms; over the ~730
+ * WSL session folders, rebuilding the columns took 9 s on the host's thread
+ * instead of 0.6 s, once a minute (measured 2026-11-05, `host.freeze_profile`).
+ */
+const wslFolders = new Map<string, string | null>();
+
 /** A folder that still exists, by its git origin; null for one that is gone or unreadable. */
 function liveRepo(cwd: string): string | null {
+  const here = hostPath(cwd);
+  if (here === cwd) return lookAt(cwd, here);
+  const known = wslFolders.get(cwd);
+  if (known !== undefined) return known;
+  const repo = lookAt(cwd, here);
+  wslFolders.set(cwd, repo);
+  return repo;
+}
+
+/** `cwd`'s repository, read at `here`, the path this host reaches it by. */
+function lookAt(cwd: string, here: string): string | null {
   try {
-    const here = hostPath(cwd);
     if (!existsSync(here)) return null;
     const top = gitTop(here);
     if (top !== null) return nameOf(top);

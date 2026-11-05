@@ -19,7 +19,11 @@ const IS_WINDOWS = process.platform === "win32";
 const DISTROS_FOR_MS = 5 * 60_000;
 const UNC = /^\\\\wsl(?:\.localhost|\$)\\([^\\]+)(\\.*)?$/i;
 
-let distros: { names: string[]; at: number } | null = null;
+/**
+ * The running distributions, and which of them holds each top folder
+ * (`/home`), or none: asked again with the list, not on every path.
+ */
+let distros: { names: string[]; at: number; tops: Map<string, string | null> } | null = null;
 
 /** `wsl.exe -l -q --running`, which answers in UTF-16. */
 function readDistros(): string[] {
@@ -41,12 +45,11 @@ function readDistros(): string[] {
   }
 }
 
-function runningDistros(now = Date.now()): string[] {
-  if (!IS_WINDOWS) return [];
+function running(now = Date.now()): NonNullable<typeof distros> {
   if (distros === null || now - distros.at > DISTROS_FOR_MS) {
-    distros = { names: readDistros(), at: now };
+    distros = { names: readDistros(), at: now, tops: new Map() };
   }
-  return distros.names;
+  return distros;
 }
 
 const uncOf = (distro: string, posix: string) =>
@@ -60,10 +63,13 @@ const uncOf = (distro: string, posix: string) =>
 export function hostPath(path: string): string {
   if (!IS_WINDOWS || !path.startsWith("/") || path.startsWith("//")) return path;
   const top = `/${path.split("/")[1] ?? ""}`;
-  for (const distro of runningDistros()) {
-    if (existsSync(uncOf(distro, top))) return uncOf(distro, path);
+  const { names, tops } = running();
+  let distro = tops.get(top);
+  if (distro === undefined) {
+    distro = names.find((name) => existsSync(uncOf(name, top))) ?? null;
+    tops.set(top, distro);
   }
-  return path;
+  return distro === null ? path : uncOf(distro, path);
 }
 
 /** A `\\wsl.localhost\<distro>\...` path as its distribution and its path inside it; null for any other. */
