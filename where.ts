@@ -18,7 +18,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { besides, hostPath } from "./wsl";
+import { besides, hostPath, isWslPath, wslTarget } from "./wsl";
 
 const HOME = homedir();
 
@@ -148,7 +148,8 @@ export function checkoutsOf(name: string): string[] {
   }
   const rank = (path: string) => Number(basename(path) !== name);
   const best = [...found]
-    .filter((path) => existsSync(join(path, ".git")))
+    // A WSL checkout was just seen by the scan worker: not asked again over 9P here.
+    .filter((path) => wslTarget(path) !== null || existsSync(join(path, ".git")))
     .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : 1));
   return best;
 }
@@ -164,16 +165,62 @@ export function checkoutOf(name: string): string | null {
  * repository. A look is several file checks over 9P, ~8 ms; over the ~730
  * WSL session folders, rebuilding the columns took 9 s on the host's thread
  * instead of 0.6 s, once a minute (measured 2026-11-05, `host.freeze_profile`).
+ * The scan worker looks (`lookAtWslFolders`) and the host's thread is told
+ * (`knowFolders`), so the host never waits on 9P; even a first look of all
+ * of them took ~6 s there.
  */
 const wslFolders = new Map<string, string | null>();
 
+/** Set on the host's thread: WSL folders are looked at in the scan worker, never here. */
+let looksElsewhere = false;
+
+/** On the host's thread: leave the WSL folders' looks to the scan worker. */
+export function lookAtFoldersElsewhere(): void {
+  looksElsewhere = true;
+}
+
+/** A WSL folder and the repository the scan worker found it in; null for one gone or unreadable. */
+export type FolderLook = [cwd: string, repo: string | null];
+
+/** Each repository's main checkouts, as `checkoutsOf` knows them. */
+export type CheckoutsSeen = [name: string, tops: string[]][];
+
+/**
+ * In the scan worker: look at the WSL folders among `cwds` not looked at yet.
+ * What it found goes to the host's thread, with every checkout seen so far.
+ */
+export function lookAtWslFolders(cwds: Iterable<string>): {
+  folders: FolderLook[];
+  checkouts: CheckoutsSeen;
+} {
+  const folders: FolderLook[] = [];
+  for (const cwd of new Set(cwds)) {
+    if (isWslPath(cwd) && !wslFolders.has(cwd)) folders.push([cwd, liveRepo(cwd)]);
+  }
+  const checkouts: CheckoutsSeen =
+    folders.length === 0 ? [] : [...CHECKOUTS].map(([name, tops]) => [name, [...tops]]);
+  return { folders, checkouts };
+}
+
+/** On the host's thread: what the scan worker found; true when it adds a folder. */
+export function knowFolders(folders: readonly FolderLook[], checkouts: CheckoutsSeen): boolean {
+  for (const [name, tops] of checkouts) for (const top of tops) noteCheckout(name, top);
+  let added = false;
+  for (const [cwd, repo] of folders) {
+    added ||= !wslFolders.has(cwd);
+    wslFolders.set(cwd, repo);
+  }
+  return added;
+}
+
 /** A folder that still exists, by its git origin; null for one that is gone or unreadable. */
 function liveRepo(cwd: string): string | null {
-  const here = hostPath(cwd);
-  if (here === cwd) return lookAt(cwd, here);
+  if (!isWslPath(cwd)) return lookAt(cwd, cwd);
   const known = wslFolders.get(cwd);
   if (known !== undefined) return known;
-  const repo = lookAt(cwd, here);
+  // Not looked at yet: placed by its path until the scan worker has (`guessRepo`).
+  if (looksElsewhere) return null;
+  const repo = lookAt(cwd, hostPath(cwd));
   wslFolders.set(cwd, repo);
   return repo;
 }

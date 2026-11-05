@@ -61,7 +61,7 @@ const uncOf = (distro: string, posix: string) =>
  * its top folder; anything else as it is.
  */
 export function hostPath(path: string): string {
-  if (!IS_WINDOWS || !path.startsWith("/") || path.startsWith("//")) return path;
+  if (!isWslPath(path)) return path;
   const top = `/${path.split("/")[1] ?? ""}`;
   const { names, tops } = running();
   let distro = tops.get(top);
@@ -70,6 +70,11 @@ export function hostPath(path: string): string {
     tops.set(top, distro);
   }
   return distro === null ? path : uncOf(distro, path);
+}
+
+/** A folder named the way a WSL session names it (`/home/...`), seen from Windows: one `hostPath` would translate. */
+export function isWslPath(path: string): boolean {
+  return IS_WINDOWS && path.startsWith("/") && !path.startsWith("//");
 }
 
 /** A `\\wsl.localhost\<distro>\...` path as its distribution and its path inside it; null for any other. */

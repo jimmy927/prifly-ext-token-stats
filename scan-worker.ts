@@ -19,7 +19,7 @@ import { type FileOut, loadArchive, saveArchive, settleArchive } from "./archive
 import { type FileState, LocalCache } from "./local-cache";
 import { accountAt, freshState, readText } from "./parse";
 import { missedBy, Transcripts } from "./transcripts";
-import { repoOfPath } from "./where";
+import { type CheckoutsSeen, type FolderLook, lookAtWslFolders, repoOfPath } from "./where";
 
 declare const self: Worker;
 
@@ -59,6 +59,12 @@ export type ScanReply = {
   archived: FileOut[];
   /** Archived paths that are on disk again, and counted from there now. */
   reclaimed: string[];
+  /**
+   * The WSL folders of these transcripts not looked at before, with their
+   * repositories, and the checkouts seen, for the host's thread (`knowFolders`).
+   */
+  folders: FolderLook[];
+  checkouts: CheckoutsSeen;
   stats: {
     files: number;
     read: number;
@@ -253,12 +259,22 @@ async function scan(request: ScanRequest): Promise<ScanReply> {
   const grown = first ? [] : changed.map((file) => file.path);
   const copies = selections.slice(1);
   const mirrored = [...files.keys()].filter((path) => copies.some((s) => within(path, s.root)));
+  const sent = first ? [...archive.values()] : archived;
+  // Here, off the host's thread: a look over 9P is ~8 ms a folder.
+  const { folders, checkouts } = lookAtWslFolders(
+    [...changed, ...sent].flatMap((file) => [
+      ...file.usages.map((usage) => usage.cwd),
+      ...(file.human ?? []).map((event) => event.cwd),
+    ]),
+  );
   const reply: ScanReply = {
     type: "scanned",
     files: changed,
     removed,
-    archived: first ? [...archive.values()] : archived,
+    archived: sent,
     reclaimed,
+    folders,
+    checkouts,
     stats: {
       files: files.size,
       read: changed.length,

@@ -30,7 +30,7 @@ import { Readings } from "./readings";
 import { RemoteSessions } from "./remote";
 import type { FileOut, ScanProgress, ScanReply, ScanRequest } from "./scan-worker";
 import { type Batch, buildColumns } from "./store";
-import { checkoutsOf, homeOf, NO_REPO } from "./where";
+import { checkoutsOf, homeOf, knowFolders, lookAtFoldersElsewhere, NO_REPO } from "./where";
 
 const LOCAL_EVERY = 60_000;
 const REMOTE_EVERY = 10 * 60_000;
@@ -154,6 +154,8 @@ function scanLocal(state: Running): Promise<void> {
 
 function received(state: Running, reply: ScanReply, log: ExtensionApi["log"]): void {
   if (applyScan(state.local, state.archived, reply)) state.answerer = null;
+  // A folder placed by its path until now has its repository: the columns are built again.
+  if (knowFolders(reply.folders, reply.checkouts)) state.answerer = null;
   state.lastScan = reply.stats;
   state.progress = null;
   state.scannedAt = Date.now();
@@ -227,6 +229,8 @@ function forecastAnswer(state: Running, query: Record<string, string>): Forecast
 }
 
 export function activate(api: ExtensionApi): () => void {
+  // This is the host's own thread: the scan worker looks at WSL folders over 9P, not this one.
+  lookAtFoldersElsewhere();
   const worker = new Worker(new URL("./scan-worker.ts", import.meta.url).href);
   const state: Running = {
     worker,
