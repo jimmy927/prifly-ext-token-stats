@@ -153,6 +153,14 @@ const line = (id: string, output: number) =>
     message: { id, model: "claude-opus-5-5", usage: { input_tokens: 1, output_tokens: output } },
   });
 
+/** Ended, its cache closed: Windows will not remove a file a worker still has open. */
+function stop(worker: Worker): Promise<void> {
+  return new Promise((resolve) => {
+    worker.addEventListener("close", () => resolve(), { once: true });
+    worker.terminate();
+  });
+}
+
 function scanWith(worker: Worker, request: ScanRequest): Promise<ScanReply> {
   return new Promise((resolve) => {
     worker.onmessage = (event: MessageEvent<ScanReply>) => resolve(event.data);
@@ -181,16 +189,18 @@ test("a restarted worker answers from the cache what a fresh read of the transcr
   const one = new Worker(url);
   await scanWith(one, request);
   appendFileSync(main, `${line("m3", 11)}\n`);
+  // The watcher delivers on the worker's event loop: give it a turn, as a scan a minute later would.
+  await Bun.sleep(150);
   expect((await scanWith(one, request)).stats.read).toBe(1);
-  one.terminate();
+  await stop(one);
 
   const cached = new Worker(url);
   const restarted = await scanWith(cached, request);
-  cached.terminate();
+  await stop(cached);
   expect(restarted.stats.bytes).toBe(0);
   const fresh = new Worker(url);
   const reread = await scanWith(fresh, { ...request, cacheFile: join(dir, "other.sqlite") });
-  fresh.terminate();
+  await stop(fresh);
   expect(byPath(restarted.files)).toEqual(byPath(reread.files));
   expect(restarted.files.flatMap((f) => f.usages.map((u) => u.output)).sort()).toEqual([11, 5, 7]);
 });

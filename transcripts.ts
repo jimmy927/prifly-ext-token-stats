@@ -52,7 +52,7 @@ export class Transcripts {
   private readonly now: () => number;
   private watcher: FSWatcher | null = null;
   /** Paths under the root the watcher named since the last scan. */
-  private dirty = new Set<string>();
+  private dirty = new Map<string, boolean>();
   /** The next scan must list everything: nothing watched yet, or an event without a name. */
   private blind = true;
   private fullAt = Number.NEGATIVE_INFINITY;
@@ -74,10 +74,10 @@ export class Transcripts {
   }
 
   private full(): Selection {
-    const flagged = this.blind || this.watcher === null ? null : this.dirty;
+    const flagged = this.blind || this.watcher === null ? null : this.named(this.dirty);
     // Watching starts before the listing: whatever is written while it runs is named next time.
     this.watcher ??= this.startWatch();
-    this.dirty = new Set();
+    this.dirty = new Map();
     this.blind = this.watcher === null;
     this.fullAt = this.now();
     const found = emptyFound();
@@ -93,19 +93,37 @@ export class Transcripts {
   /** What the watcher named: files stat'ed, new folders listed, vanished paths reported gone. */
   private changed(): Selection {
     const names = this.dirty;
-    this.dirty = new Set();
+    this.dirty = new Map();
     const found = emptyFound();
     const gone: string[] = [];
-    for (const name of names) {
+    for (const [name, renamed] of names) {
       const path = join(this.root, name);
       found.statted += 1;
       const stat = lstatOrNull(path);
+      // Either separator: on Windows the watcher names `p\s1.jsonl`.
+      const top = name.split(/[\\/]/)[0] ?? name;
       if (stat === null) gone.push(path);
-      else if (this.isLink(name.split("/")[0] ?? name, found)) continue;
+      else if (stat.isDirectory() && !renamed) continue;
+      else if (this.isLink(top, found)) continue;
       else if (stat.isDirectory()) this.walk(path, found);
-      else if (stat.isFile() && name.includes("/")) add(found, path);
+      else if (stat.isFile() && top !== name) add(found, path);
     }
     return { ...listed(found), full: false, gone, flagged: null };
+  }
+
+  /**
+   * The names the watcher gave, less folders it named only as changed. On
+   * Windows listing a folder fires a change on it, so a full pass would name
+   * every folder it read; and a folder's own change only echoes its files',
+   * which come named, while a new or removed one comes as a rename (measured
+   * 2026-11-05 on NTFS: a full pass named p, p\s1 and p\s1\subagents).
+   */
+  private named(dirty: ReadonlyMap<string, boolean>): Set<string> {
+    const names = new Set<string>();
+    for (const [name, renamed] of dirty) {
+      if (renamed || !lstatOrNull(join(this.root, name))?.isDirectory()) names.add(name);
+    }
+    return names;
   }
 
   /** `~/odi` beside `~/src/odi`: a symlinked project folder repeats another. */
@@ -126,9 +144,10 @@ export class Transcripts {
   private startWatch(): FSWatcher | null {
     let watcher: FSWatcher;
     try {
-      watcher = watch(this.root, { recursive: true }, (_event, name) => {
-        if (typeof name === "string") this.dirty.add(name);
-        else this.blind = true;
+      watcher = watch(this.root, { recursive: true }, (event, name) => {
+        if (typeof name === "string") {
+          this.dirty.set(name, this.dirty.get(name) === true || event === "rename");
+        } else this.blind = true;
       });
     } catch (caught) {
       // Out of inotify watches (ENOSPC) or the like: every scan is a full pass, as before.

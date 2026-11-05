@@ -77,18 +77,21 @@ function gitTop(cwd: string): string | null {
   return null;
 }
 
-/** The main checkout a worktree's path names: `x.worktrees/y` and `x/.claude/worktrees/y` are x. */
+/**
+ * The main checkout a worktree's path names: `x.worktrees/y` and
+ * `x/.claude/worktrees/y` are x. Either separator: a host on Windows has `\`.
+ */
 function worktreeMain(path: string): string | null {
   return (
-    /^(.*?)\.worktrees\//.exec(path)?.[1] ??
-    /^(.*?)\/(\.claude\/worktrees|worktrees)\//.exec(path)?.[1] ??
+    /^(.*?)\.worktrees[\\/]/.exec(path)?.[1] ??
+    /^(.*?)[\\/](\.claude[\\/]worktrees|worktrees)[\\/]/.exec(path)?.[1] ??
     null
   );
 }
 
 /** From the path alone, for a folder that is gone: `x.worktrees/y` is x, a scratchpad is in none. */
 function guessRepo(cwd: string): string {
-  if (/\/scratchpad(\/|$)/.test(cwd) || cwd.startsWith("/tmp/")) return NO_REPO;
+  if (/[\\/]scratchpad([\\/]|$)/.test(cwd) || cwd.startsWith("/tmp/")) return NO_REPO;
   const main = worktreeMain(cwd);
   if (main !== null) return basename(main);
   return cwd === HOME ? NO_REPO : basename(cwd) || "unknown";

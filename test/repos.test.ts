@@ -159,7 +159,11 @@ test("a no-repo session's sub-agent splits its calls by the files it wrote into 
   appendFileSync(writer, `${call("w3", src, 10)}\n`);
   const grown = (await scanWith(worker, request)).files.find((f) => f.path === writer);
   expect(grown?.writes).toEqual({ alpha: 3, beta: 1 });
-  worker.terminate();
+  // Ended, its cache closed: Windows will not remove a file a worker still has open.
+  await new Promise<void>((resolve) => {
+    worker.addEventListener("close", () => resolve(), { once: true });
+    worker.terminate();
+  });
 });
 
 test("a file that is gone is placed by what is left of its checkout, or by its path", () => {

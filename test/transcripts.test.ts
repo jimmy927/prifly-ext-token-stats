@@ -28,7 +28,8 @@ function projects(): string {
   writeFileSync(join(root, "p", "s1", "subagents", "agent-a.jsonl"), "{}\n");
   writeFileSync(join(root, "p", "s1", "custom-title.json"), "{}");
   writeFileSync(join(root, "stray.jsonl"), "{}\n");
-  symlinkSync(join(root, "p"), join(root, "link"));
+  // A junction on Windows, where a symlink needs admin rights; elsewhere the type is ignored.
+  symlinkSync(join(root, "p"), join(root, "link"), "junction");
   return root;
 }
 
@@ -58,7 +59,9 @@ test("with nothing written, a scan stats nothing", async () => {
   await settle();
   const selection = transcripts.select();
   expect(selection).toMatchObject({ full: false, main: [], agents: [], gone: [], dirs: 0 });
-  expect(selection.statted).toBe(0);
+  // On Windows listing a folder fires a change on it: p, p\s1 and p\s1\subagents are stat'ed to be passed over.
+  if (process.platform === "win32") expect(selection.statted).toBeLessThanOrEqual(3);
+  else expect(selection.statted).toBe(0);
 });
 
 test("a transcript appended to is the only one stat'ed", async () => {
@@ -124,7 +127,8 @@ test("every ten minutes a scan is a full pass, and carries what the watcher name
   expect(selection.full).toBe(true);
   expect(selection.main).toEqual([join(root, "p", "s1.jsonl")]);
   expect(selection.agents).toHaveLength(1);
-  expect(selection.flagged).toEqual(new Set(["p/s1.jsonl"]));
+  // As the watcher names it: `p\s1.jsonl` on Windows.
+  expect(selection.flagged).toEqual(new Set([join("p", "s1.jsonl")]));
   expect(transcripts.select().full).toBe(false);
 });
 

@@ -146,6 +146,14 @@ const line = (id: string, output: number) =>
     message: { id, model: "claude-opus-5-5", usage: { input_tokens: 1, output_tokens: output } },
   });
 
+/** Ended, its cache closed: Windows will not remove a file a worker still has open. */
+function stop(worker: Worker): Promise<void> {
+  return new Promise((resolve) => {
+    worker.addEventListener("close", () => resolve(), { once: true });
+    worker.terminate();
+  });
+}
+
 function scanWith(worker: Worker, request: ScanRequest): Promise<ScanReply> {
   return new Promise((resolve) => {
     worker.onmessage = (event: MessageEvent<ScanReply>) => resolve(event.data);
@@ -179,7 +187,7 @@ test("the worker archives a deleted transcript, keeps it without the live cache,
   expect(second.archived.map((f) => f.path)).toEqual([b]);
   applyScan(live, archive, second);
   expect(totalOutput(live, archive)).toBe(12);
-  first.terminate();
+  await stop(first);
 
   // A reset live cache: a fresh worker still sends the archive in its first reply.
   rmSync(request.cacheFile);
@@ -196,7 +204,7 @@ test("the worker archives a deleted transcript, keeps it without the live cache,
   applyScan(live, archive, back);
   expect([live.size, archive.size]).toEqual([2, 0]);
   expect(totalOutput(live, archive)).toBe(12);
-  again.terminate();
+  await stop(again);
 });
 
 test("prifly's copy of another machine's history is read as a root of its own, and archived when it goes", async () => {
@@ -243,5 +251,5 @@ test("prifly's copy of another machine's history is read as a root of its own, a
   const third = await scanWith(worker, request);
   applyScan(live, archive, third);
   expect([live.size, archive.size]).toEqual([1, 2]);
-  worker.terminate();
+  await stop(worker);
 });

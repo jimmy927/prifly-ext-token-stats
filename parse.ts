@@ -121,7 +121,8 @@ export function writesOf(line: Line): string[] {
     const field = WRITE_TOOLS[str(block?.["name"])];
     if (block?.["type"] !== "tool_use" || field === undefined) return [];
     const path = str(asRecord(block["input"])?.[field]);
-    return path.startsWith("/") ? [path] : [];
+    // Absolute only; a session on Windows names `C:\...`.
+    return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) ? [path] : [];
   });
 }
 
