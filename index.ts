@@ -34,6 +34,10 @@ import { checkoutsOf, homeOf, NO_REPO } from "./where";
 
 const LOCAL_EVERY = 60_000;
 const REMOTE_EVERY = 10 * 60_000;
+/** How long the Code view waits for a git read before answering without it. */
+const CODE_WAIT_MS = 1500;
+/** A git read that ended this recently is not run again for the Code view. */
+const GIT_FRESH_MS = 30_000;
 /** prifly's pollers read an account's limits at most this often. */
 const READINGS_EVERY = 5 * 60_000;
 
@@ -55,6 +59,8 @@ type Running = {
   log: ExtensionApi["log"];
   git: GitLines;
   gitReading: Promise<void> | null;
+  /** When the last git read ended, 0 before one. */
+  gitReadAt: number;
   /** Whether the Code view has asked this run: git is not read for a panel nobody opened. */
   codeAsked: boolean;
   /**
@@ -132,6 +138,7 @@ function readGit(state: Running): Promise<void> {
     .catch((error: unknown) => state.log("git_unreadable", { error: String(error) }))
     .finally(() => {
       state.gitReading = null;
+      state.gitReadAt = Date.now();
     });
   return state.gitReading;
 }
@@ -245,6 +252,7 @@ export function activate(api: ExtensionApi): () => void {
     log: api.log,
     git: new GitLines(join(api.folder, "cache", "git.json")),
     gitReading: null,
+    gitReadAt: 0,
     codeAsked: false,
     // A host older than the contract's `accounts()` has no such function.
     accounts: typeof api.accounts === "function" ? () => api.accounts() : null,
@@ -311,11 +319,20 @@ export async function panel(_panelId: string, request: PanelRequest): Promise<un
     case "code": {
       if (state.lastScan === null) await scanLocal(state);
       state.codeAsked = true;
-      // With a history on hand the read is incremental, and cheap where nothing moved: wait for
-      // it, so the answer is current. Without one it is long: answer "not ready" and let the page retry.
-      if (state.git.ready()) await readGit(state);
-      else void readGit(state);
-      return codeAnswer(answerer(state), state.git, readCodeParams(request.query, Date.now()));
+      // A read where nothing moved is quick: wait for it, so the answer is current. A long one
+      // (a first read, a new checkout) answers now, "not ready", and the page asks again until it
+      // ends; a read that ended moments ago is current enough, so the asking stops.
+      const recent = Date.now() - state.gitReadAt < GIT_FRESH_MS;
+      const reading = state.gitReading ?? (recent ? null : readGit(state));
+      const done =
+        reading === null ||
+        (await Promise.race([reading.then(() => true), Bun.sleep(CODE_WAIT_MS).then(() => false)]));
+      const answer = codeAnswer(
+        answerer(state),
+        state.git,
+        readCodeParams(request.query, Date.now()),
+      );
+      return done ? answer : { ...answer, ready: false };
     }
     case "stats": {
       if (state.lastScan === null) await scanLocal(state);
