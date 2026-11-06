@@ -125,13 +125,15 @@ test("a queued prompt followed by its own user line is one prompt; alone it is o
       queue(3, "just queued"),
       reply(4, "m1"),
       // The same words typed again later are a prompt of their own.
-      user(5, "also do this"),
+      user(5, "just queued"),
+      user(5.1, "also do this"),
     ),
   ).toEqual([
     [1, estimateTokens("also do this")],
     [2, estimateTokens("a different prompt")],
     [3, estimateTokens("just queued")],
-    [5, estimateTokens("also do this")],
+    [5, estimateTokens("just queued")],
+    [5.1, estimateTokens("also do this")],
   ]);
 });
 

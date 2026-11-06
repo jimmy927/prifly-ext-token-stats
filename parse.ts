@@ -76,8 +76,8 @@ export type ReaderState = {
   replied: number;
   /** The AskUserQuestion calls not answered yet, by tool_use id: their answer is the reader's. */
   asks: string[];
-  /** The texts of prompts queued whose own user line has not come yet: it is the same prompt. */
-  queued: string[];
+  /** The last prompt queued, until the next user line: that line may be the same prompt. */
+  queued: { text: string; ts: number } | null;
   /** The reader's own events since the scan last took them. */
   human: HumanEvent[];
 };
@@ -99,7 +99,7 @@ export function freshState(account = ""): ReaderState {
     hits: [],
     replied: 0,
     asks: [],
-    queued: [],
+    queued: null,
     human: [],
   };
 }
@@ -160,8 +160,8 @@ function refusal(block: Line): boolean {
  * most of the bytes. Of user lines, a tool result — most of them, and the
  * biggest — only when it may be the reader's own: a refused call, or the
  * answer to a question still open (`humanOf`). A queued prompt only when
- * queued, not when taken off the queue. Every user line is kept, for the one
- * that repeats a queued prompt (`QUEUED`).
+ * queued, not when taken off the queue. A plain user line is always kept: it
+ * may repeat a queued prompt (`humanOf`).
  */
 export function interesting(line: string, state: ReaderState): boolean {
   if (
@@ -216,15 +216,18 @@ function typed(text: string): boolean {
 /** The most AskUserQuestion calls kept waiting for an answer: one abandoned must not pile up. */
 const ASKS = 16;
 
-/** The most queued prompts kept waiting for their user line: one that never comes must not pile up. */
-const QUEUED = 16;
+/**
+ * How soon after a prompt is queued its own user line comes, at most: a line
+ * later than this, with the same words, is the reader typing them again.
+ */
+const QUEUED_MS = 10_000;
 
 /**
  * Whether a line is the reader acting: a prompt typed (a slash command and
- * an interrupt included), one queued while Claude worked — counted when
- * queued, and its own user line, which Claude Code on Windows writes after
- * it with the same text, is not a second prompt — the answer to an AskUserQuestion, or a tool call
- * refused. Not a meta line, a compaction's summary, a sub-agent's line
+ * an interrupt included), one queued while Claude worked, the answer to an
+ * AskUserQuestion, or a tool call refused. A queued prompt counts when
+ * queued; on Windows its own user line follows with the same text, which is
+ * not a second prompt (`QUEUED_MS`). Not a meta line, a compaction's summary, a sub-agent's line
  * (a sidechain), a tool's result, or anything `NOT_TYPED` begins. An
  * enqueue with no text is the queue recording a prompt whose own user line
  * follows at once.
@@ -232,19 +235,17 @@ const QUEUED = 16;
 function humanOf(state: ReaderState, line: Line): boolean {
   if (line["type"] === "queue-operation") {
     if (line["operation"] !== "enqueue" || !typed(str(line["content"]))) return false;
-    state.queued.push(str(line["content"]).trim());
-    if (state.queued.length > QUEUED) state.queued.shift();
+    state.queued = { text: str(line["content"]).trim(), ts: Date.parse(str(line["timestamp"])) };
     return true;
   }
   const machine =
     line["isMeta"] === true || line["isCompactSummary"] === true || line["isSidechain"] === true;
   if (line["type"] !== "user" || machine) return false;
   // The user line of a prompt already counted when it was queued.
-  const queued = state.queued.indexOf(textOf(line).trim());
-  if (queued >= 0) {
-    state.queued.splice(queued, 1);
-    return false;
-  }
+  const queued = state.queued;
+  state.queued = null;
+  const ts = Date.parse(str(line["timestamp"]));
+  if (queued?.text === textOf(line).trim() && ts - queued.ts <= QUEUED_MS) return false;
   const content = asRecord(line["message"])?.["content"];
   if (typeof content === "string") return typed(content);
   return Array.isArray(content) && blocksAreHuman(state, line, content.map(asRecord));
