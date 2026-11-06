@@ -97,6 +97,44 @@ test("a queued prompt counts; a tool result never does", () => {
   expect(state.human.map((e) => e.tokens)).toEqual([undefined, estimateTokens("also this")]);
 });
 
+test("on Windows, prifly's own folders are not the reader's; a repo is", () => {
+  const folder = (cwd: string) => prompts(user(0, "Why is it empty?", cwd)).length;
+  expect(folder("C:\\Users\\jimmy\\AppData\\Local\\Temp")).toBe(0);
+  expect(folder("C:\\Users\\jimmy\\AppData\\Local\\Temp\\claude-1000\\x")).toBe(0);
+  expect(folder("c:/users/jimmy/appdata/local/temp/x")).toBe(0);
+  expect(folder("C:\\Users\\jimmy\\AppData\\Local\\prifly\\host\\summariser")).toBe(0);
+  expect(folder("C:/Users/jimmy/AppData/Local/prifly/host/summariser/x")).toBe(0);
+  expect(folder("C:\\Users\\jimmy\\src\\prifly")).toBe(1);
+  expect(folder("C:\\Users\\jimmy\\AppData\\Local\\Temporary")).toBe(1);
+});
+
+test("a queued prompt followed by its own user line is one prompt; alone it is one", () => {
+  const queue = (minutes: number, content: string) =>
+    JSON.stringify({
+      type: "queue-operation",
+      operation: "enqueue",
+      timestamp: at(minutes),
+      content,
+    });
+  expect(
+    prompts(
+      reply(0, "m0"),
+      queue(1, "also do this"),
+      user(1.1, "also do this"),
+      user(2, "a different prompt"),
+      queue(3, "just queued"),
+      reply(4, "m1"),
+      // The same words typed again later are a prompt of their own.
+      user(5, "also do this"),
+    ),
+  ).toEqual([
+    [1, estimateTokens("also do this")],
+    [2, estimateTokens("a different prompt")],
+    [3, estimateTokens("just queued")],
+    [5, estimateTokens("also do this")],
+  ]);
+});
+
 test("tokens are characters over the fitted ratio: prose 2.9, code-like 2.33", () => {
   expect(estimateTokens("")).toBe(0);
   const prose = "a".repeat(290);

@@ -76,6 +76,8 @@ export type ReaderState = {
   replied: number;
   /** The AskUserQuestion calls not answered yet, by tool_use id: their answer is the reader's. */
   asks: string[];
+  /** The texts of prompts queued whose own user line has not come yet: it is the same prompt. */
+  queued: string[];
   /** The reader's own events since the scan last took them. */
   human: HumanEvent[];
 };
@@ -97,6 +99,7 @@ export function freshState(account = ""): ReaderState {
     hits: [],
     replied: 0,
     asks: [],
+    queued: [],
     human: [],
   };
 }
@@ -157,7 +160,8 @@ function refusal(block: Line): boolean {
  * most of the bytes. Of user lines, a tool result — most of them, and the
  * biggest — only when it may be the reader's own: a refused call, or the
  * answer to a question still open (`humanOf`). A queued prompt only when
- * queued, not when taken off the queue.
+ * queued, not when taken off the queue. Every user line is kept, for the one
+ * that repeats a queued prompt (`QUEUED`).
  */
 export function interesting(line: string, state: ReaderState): boolean {
   if (
@@ -212,10 +216,14 @@ function typed(text: string): boolean {
 /** The most AskUserQuestion calls kept waiting for an answer: one abandoned must not pile up. */
 const ASKS = 16;
 
+/** The most queued prompts kept waiting for their user line: one that never comes must not pile up. */
+const QUEUED = 16;
+
 /**
  * Whether a line is the reader acting: a prompt typed (a slash command and
- * an interrupt included), one queued while Claude worked — those have no
- * user line of their own — the answer to an AskUserQuestion, or a tool call
+ * an interrupt included), one queued while Claude worked — counted when
+ * queued, and its own user line, which Claude Code on Windows writes after
+ * it with the same text, is not a second prompt — the answer to an AskUserQuestion, or a tool call
  * refused. Not a meta line, a compaction's summary, a sub-agent's line
  * (a sidechain), a tool's result, or anything `NOT_TYPED` begins. An
  * enqueue with no text is the queue recording a prompt whose own user line
@@ -223,11 +231,20 @@ const ASKS = 16;
  */
 function humanOf(state: ReaderState, line: Line): boolean {
   if (line["type"] === "queue-operation") {
-    return line["operation"] === "enqueue" && typed(str(line["content"]));
+    if (line["operation"] !== "enqueue" || !typed(str(line["content"]))) return false;
+    state.queued.push(str(line["content"]).trim());
+    if (state.queued.length > QUEUED) state.queued.shift();
+    return true;
   }
   const machine =
     line["isMeta"] === true || line["isCompactSummary"] === true || line["isSidechain"] === true;
   if (line["type"] !== "user" || machine) return false;
+  // The user line of a prompt already counted when it was queued.
+  const queued = state.queued.indexOf(textOf(line).trim());
+  if (queued >= 0) {
+    state.queued.splice(queued, 1);
+    return false;
+  }
   const content = asRecord(line["message"])?.["content"];
   if (typeof content === "string") return typed(content);
   return Array.isArray(content) && blocksAreHuman(state, line, content.map(asRecord));
@@ -328,18 +345,26 @@ function textOf(line: Line): string {
     .join("\n");
 }
 
-/** prifly's summariser, whose sessions run in this folder of the home directory. */
-const SUMMARISER = "/.local/share/prifly/summariser";
+/**
+ * The folders prifly runs its own sessions in, as lower-case `/` paths: its
+ * summariser in the home directory, on Linux and on Windows, and the
+ * temporary folder, `/tmp` or `...\AppData\Local\Temp`.
+ */
+const SUMMARISERS = ["/.local/share/prifly/summariser", "/prifly/host/summariser"];
+const TEMP = /^(\/tmp|[a-z]:\/users\/[^/]+\/appdata\/local\/temp)(\/|$)/;
 
 /**
  * Whether a session in folder `cwd` is one prifly prompts itself, so none of
- * its prompts are the reader's: a reviewer under `/tmp`, the summariser, or a
- * session whose folder is not known yet (a prompt queued as its first line,
+ * its prompts are the reader's: a reviewer under the temporary folder, the
+ * summariser, or a session whose folder is not known yet (a prompt queued as its first line,
  * which is prifly starting a reviewer).
  */
 export function promptedByPrifly(cwd: string): boolean {
-  if (cwd === "" || cwd === "/tmp" || cwd.startsWith("/tmp/")) return true;
-  return cwd.endsWith(SUMMARISER) || cwd.includes(`${SUMMARISER}/`);
+  if (cwd === "") return true;
+  // A Windows folder is written with either slash, in any case.
+  const path = cwd.replaceAll("\\", "/").toLowerCase();
+  if (TEMP.test(path)) return true;
+  return SUMMARISERS.some((folder) => path.endsWith(folder) || path.includes(`${folder}/`));
 }
 
 /**
