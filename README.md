@@ -4,6 +4,10 @@ A window of how many tokens Claude Code used, and when. It opens from the
 **Token statistics** button in prifly's status bar and fills nearly the whole
 window.
 
+![Token statistics window showing cost per hour by account, a breakdown table, the context window simulator and a weekday-by-hour map](docs/screenshot.png)
+
+*The Token statistics window in prifly, with invented data.*
+
 - **Split by** account, model, repository, folder, local/remote or session, or
   show the total.
 - **Measure** cost (the default), output tokens, input + cache writes, cache
