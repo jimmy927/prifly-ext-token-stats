@@ -46,6 +46,28 @@ export type Batch = {
   home?: string;
 };
 
+/** What a call with no recorded account and a non-Claude model with no provider in its id is listed under. */
+export const OTHER_PROVIDER = "other provider";
+
+/**
+ * Whose account a call is listed under. A recorded one stays. With none, a
+ * Claude model (`claude-…`, a cloud platform's `us.anthropic.claude-…`, and
+ * the placeholders `<synthetic>` and `unknown`) is "not recorded"; any other
+ * model has no Claude login, so it is listed under its provider: the id up to
+ * its first `/` (`moonshotai/Kimi-K3` is `moonshotai`), or `OTHER_PROVIDER`
+ * where the id has no `/`.
+ */
+export function accountFor(account: string | undefined, model: string): string {
+  if (account && account !== UNKNOWN) return account;
+  const id = model.trim();
+  const lower = id.toLowerCase();
+  if (lower === "" || lower === "unknown" || id.startsWith("<") || lower.includes("claude")) {
+    return UNKNOWN;
+  }
+  const slash = id.indexOf("/");
+  return slash > 0 ? id.slice(0, slash) : OTHER_PROVIDER;
+}
+
 /**
  * The reader's present stretches (`presence.ts`), a row per stretch and
  * repository: its weight already scaled by the repository's share, as a
@@ -172,7 +194,15 @@ class Filler {
     const price = this.priceFor(usage.model);
     const cost = price === null ? 0 : costOf(price, usage);
     for (const [repo, share] of places) {
-      const i = this.row(batch, session, usage.account, usage.model, usage.ts, usage.cwd, repo);
+      const i = this.row(
+        batch,
+        session,
+        accountFor(usage.account, usage.model),
+        usage.model,
+        usage.ts,
+        usage.cwd,
+        repo,
+      );
       cols.share[i] = share;
       cols.input[i] = usage.input * share;
       cols.cacheWrite[i] = usage.cacheWrite * share;
@@ -197,8 +227,8 @@ class Filler {
     places: readonly Place[],
   ): void {
     const { cols } = this;
-    const account = answer?.account || UNKNOWN;
     const model = answer?.model ?? "unknown";
+    const account = accountFor(answer?.account, model);
     this.priceFor(model);
     for (const [repo, share] of places) {
       const i = this.row(batch, session, account, model, event.ts, event.cwd, repo);
