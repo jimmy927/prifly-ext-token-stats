@@ -49,8 +49,7 @@ other measure, and the table has a column for each.
 - A prompt is placed as a call made then would be: its folder's repository,
   or its transcript's writes. Its **account and model** are those of the call
   that answered it, its transcript's next call (or else its last).
-- Transcripts archived before prompts were kept, and archived remote
-  sessions no longer listed, have no prompts.
+- Transcripts archived before prompts were kept have no prompts.
 
 ## Forecast
 
@@ -138,8 +137,7 @@ How it is worked out (`forecast.ts`):
   of weeks aside, within 30 minutes (`history.ts`); refusals matching no
   account prifly holds are counted in the note, not drawn. A window is shown
   for each account's latest reading's reset and each reset a refusal names;
-  none is inferred by adding weeks, since resets move. Remote sessions carry
-  no refusals.
+  none is inferred by adding weeks, since resets move.
 
 **Where the readings come from.** prifly's own usage pollers read each
 account's limits; `api.accounts()` hands the extension what they last read,
@@ -186,9 +184,9 @@ shared with Usage; the Usage-only splits, measures and filters hide.
 - A table per repository: spend, lines added, $ per 1k lines, active time,
   hours per 1k lines, share of spend and share of lines. Double-click a row to
   show only that repository. A repository with active time but no spend or
-  lines in the stretch (a cloud session with no repository, "unknown") has a
+  lines in the stretch (a session with no repository, "unknown") has a
   row too.
-- A repository with spend and no checkout on this machine (a cloud-only one)
+- A repository with spend and no checkout on this machine (one cloned elsewhere)
   shows its spend and "—" for lines; the $ per 1k lines and hours per 1k
   lines leave its spend and time out.
 - Only lines added are counted: no commits, deletions or net size.
@@ -224,10 +222,8 @@ alone:
   hard cut — gaps up to 10 minutes whole, longer ones not at all — gave
   31.7 hours, precision 0.95 and recall 0.98; the table is the same fit,
   smoothed.
-- Remote sessions count too: their transcripts are Claude Code's own lines
-  and go through the same reader. Transcripts archived before events were
-  kept, and remote sessions read before then that have left the API's
-  listing, have no events and add no time.
+- Transcripts archived before events were kept have no events and add no
+  time.
 
 ## Model colours
 
@@ -264,9 +260,8 @@ count as their model.
 - A model with no price in the table is **unpriced**: its calls are in no
   cost, and the page names them under the title rather than counting them as
   $0.
-- Calls read before the 5-minute/1-hour split was kept (the archive, and
-  cloud sessions read earlier) have all their cache writes priced at the
-  5-minute rate, so their cost is a lower bound.
+- Calls read before the 5-minute/1-hour split was kept (the archive) have all
+  their cache writes priced at the 5-minute rate, so their cost is a lower bound.
 - Not priced: fast mode, US-only inference and the batch discount, none of
   which Claude Code's transcripts show in use. The pricing page lists no
   long-context rate for current models.
@@ -323,11 +318,7 @@ counted once, by its message id.
   counting in every chart, split and filter; the status line says how many
   are archived. The archive is a file of its own, so deleting `local.sqlite`
   only makes the next read slower. If an archived transcript comes back to
-  the same path, the file is counted and its archived copy dropped. Remote
-  sessions likewise stay counted after they leave the API's listing.
-- **Remote** sessions (Claude Code on the web) are read through prifly's
-  connected Claude accounts, each with its own token. A session is fetched
-  again only when it has changed since.
+  the same path, the file is counted and its archived copy dropped.
 - **Account**: Claude Code writes the logged-in email into a transcript when a
   session starts or resumes, and has done so since early September 2026.
   Each call counts towards the last email named before it. If you log in as
@@ -401,9 +392,7 @@ the status bar that opens your page over nearly the whole window.
    variables (`--background`, `--foreground`, `--border`, `--font-sans`, …),
    including those of any skin or theme in use.
 
-Other things an extension gets: `api.cloud.sessions()` and
-`api.cloud.transcript(account, id)` read the cloud sessions of every Claude
-account connected to prifly. See `prifly-api.ts` for the whole contract.
+See `prifly-api.ts` for the whole contract.
 
 ## Develop
 

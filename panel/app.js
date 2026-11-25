@@ -384,13 +384,9 @@ async function status(poll) {
     const s = await (await fetch("api/status")).json();
     // The Forecast view's status line is its own (forecast.js).
     if (state.view === "forecast") return;
-    const remote =
-      s.remote.error !== ""
-        ? ` · remote: ${s.remote.error}`
-        : ` · ${s.remote.sessions.toLocaleString("en-US")} remote`;
     const archived = ` · ${s.archived.toLocaleString("en-US")} archived`;
     node.textContent = s.ready
-      ? `${s.sessions.toLocaleString("en-US")} transcripts${archived}${remote}${s.scanning ? ` · reading${progressOf(s.progress)}` : ""}`
+      ? `${s.sessions.toLocaleString("en-US")} transcripts${archived}${s.scanning ? ` · reading${progressOf(s.progress)}` : ""}`
       : `Reading your transcripts for the first time${progressOf(s.progress)}`;
     if (poll && (!s.ready || s.scanning)) setTimeout(() => void status(true), 2000);
   } catch {
