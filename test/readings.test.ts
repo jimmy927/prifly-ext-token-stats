@@ -125,6 +125,31 @@ test("an answer with no limits keeps the window lengths, marks the account stale
   expect(readings.accounts[0]?.windowMs["7d"]).toBe(7 * DAY);
 });
 
+test("one account per email across machines: readings come from the entry with a readAt", () => {
+  const readings = new Readings(fileIn());
+  const wsl = { ...account(null, 0), startsNewSessions: false, label: "WSL" };
+  expect(readings.take([wsl, account(NOW, 40)], NOW)).toBe(2);
+  expect(readings.accounts).toHaveLength(1);
+  expect(readings.accounts[0]?.label).toBe("Work");
+  expect(readings.accounts[0]?.startsNewSessions).toBe(true);
+  expect(readings.accounts[0]?.stale).toBe(false);
+  expect(readings.all().filter((r) => r.label === "7d")).toHaveLength(1);
+});
+
+test("one account per email across machines: the newest of two readings wins, emails compared case-insensitively", () => {
+  const readings = new Readings(fileIn());
+  const older = account(NOW - 1000, 40);
+  const newer = { ...account(NOW, 55), email: "A@X.com", label: "Laptop" };
+  const other = { ...account(NOW, 10), email: "b@x.com" };
+  expect(readings.take([older, other, newer], NOW)).toBe(4);
+  expect(readings.accounts.map((a) => a.email.toLowerCase())).toEqual(["a@x.com", "b@x.com"]);
+  expect(readings.accounts[0]?.label).toBe("Laptop");
+  const weekly = readings
+    .all()
+    .filter((r) => r.email.toLowerCase() === "a@x.com" && r.label === "7d");
+  expect(weekly.map((r) => r.usedPercent)).toEqual([55]);
+});
+
 test("an account from a prifly that predates free resets has none, not undefined", () => {
   const readings = new Readings(fileIn());
   const { freeResets: _, ...old } = account(NOW, 40);

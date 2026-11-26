@@ -102,16 +102,31 @@ export class Readings {
   /** Take what `accounts()` answered; returns how many readings were added. */
   take(accounts: AccountInfo[], now: number): number {
     const before = new Map(this.accounts.map((meta) => [meta.email, meta]));
-    this.accounts = accounts.map((account) => {
+    // One entry per (email, machine): the weekly limit belongs to the email, so
+    // the machines of one login are one account, read from its newest entry.
+    const groups = new Map<string, AccountInfo[]>();
+    for (const account of accounts) {
+      const key = account.email.toLowerCase();
+      groups.set(key, [...(groups.get(key) ?? []), account]);
+    }
+    const newest = [...groups.values()].map((group) => ({
+      group,
+      account: group.reduce((best, a) => ((a.readAt ?? -1) > (best.readAt ?? -1) ? a : best)),
+    }));
+    this.accounts = newest.map(({ group, account }) => {
       const followed = account.limits.filter((l) => isWindow(l.label));
       const windowMs: AccountMeta["windowMs"] = {
         ...before.get(account.email)?.windowMs,
-        ...Object.fromEntries(followed.map((l) => [l.label, l.windowMs])),
+        ...Object.fromEntries(
+          group.flatMap((a) =>
+            a.limits.filter((l) => isWindow(l.label)).map((l) => [l.label, l.windowMs]),
+          ),
+        ),
       };
       return {
         email: account.email,
         label: account.label,
-        startsNewSessions: account.startsNewSessions,
+        startsNewSessions: group.some((a) => a.startsNewSessions),
         windowMs,
         // As answered: null is also how prifly says "none", so a kept one could outlive its grant.
         // A prifly older than free resets leaves the field out: that is "none" too.
@@ -120,7 +135,7 @@ export class Readings {
       };
     });
     const added: Reading[] = [];
-    for (const account of accounts) {
+    for (const { account } of newest) {
       if (account.readAt === null || account.readAt <= this.latestOf(account.email)) continue;
       for (const limit of account.limits) {
         if (!isWindow(limit.label)) continue;
