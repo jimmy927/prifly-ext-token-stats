@@ -124,3 +124,10 @@ test("an answer with no limits keeps the window lengths, marks the account stale
   expect(readings.accounts[0]?.stale).toBe(false);
   expect(readings.accounts[0]?.windowMs["7d"]).toBe(7 * DAY);
 });
+
+test("an account from a prifly that predates free resets has none, not undefined", () => {
+  const readings = new Readings(fileIn());
+  const { freeResets: _, ...old } = account(NOW, 40);
+  readings.take([old as AccountInfo], NOW);
+  expect(readings.accounts[0]?.freeResets).toBeNull();
+});

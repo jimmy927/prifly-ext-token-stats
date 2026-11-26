@@ -114,7 +114,8 @@ export class Readings {
         startsNewSessions: account.startsNewSessions,
         windowMs,
         // As answered: null is also how prifly says "none", so a kept one could outlive its grant.
-        freeResets: account.freeResets,
+        // A prifly older than free resets leaves the field out: that is "none" too.
+        freeResets: account.freeResets ?? null,
         stale: (account.readAt === null || followed.length === 0) && this.latest.has(account.email),
       };
     });
