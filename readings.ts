@@ -13,7 +13,7 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { AccountFreeReset, AccountInfo } from "./prifly-api";
+import type { AccountInfo } from "./prifly-api";
 
 const DAY = 86_400_000;
 export const RETAIN = 30 * DAY;
@@ -47,8 +47,6 @@ export type AccountMeta = {
    * the row is drawn from the last reading, not a current one.
    */
   stale: boolean;
-  /** Its free resets ("Reset for free", claude.ai Settings → Usage); null with none. */
-  freeResets: AccountFreeReset | null;
 };
 
 const isWindow = (label: string): label is Window => (WINDOWS as readonly string[]).includes(label);
@@ -113,9 +111,6 @@ export class Readings {
         label: account.label,
         startsNewSessions: account.startsNewSessions,
         windowMs,
-        // As answered: null is also how prifly says "none", so a kept one could outlive its grant.
-        // A prifly older than free resets leaves the field out: that is "none" too.
-        freeResets: account.freeResets ?? null,
         stale: (account.readAt === null || followed.length === 0) && this.latest.has(account.email),
       };
     });

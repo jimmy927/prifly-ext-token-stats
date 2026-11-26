@@ -1,14 +1,6 @@
 import { expect, test } from "bun:test";
 import { burndownNote, burndownSpan } from "../panel/burndown-words.js";
-import {
-  afterResetBar,
-  burnCell,
-  freeResetChip,
-  freeResetCovers,
-  freeResetSummary,
-  runwayBanner,
-  staleNote,
-} from "../panel/forecast.js";
+import { burnCell, runwayBanner, staleNote } from "../panel/forecast.js";
 import { clockName } from "../panel/format.js";
 
 const w = (outcome, dryHours, ratePerHour, rateFrom) => ({
@@ -39,49 +31,6 @@ test("the banner counts spent and dry accounts, and the burn column shows each o
   expect(burnCell(w("spent", 19.8, 1, "ran out"))).toBe(
     '1.00 %/h<span class="small">rate from how it ran out</span>',
   );
-});
-
-test("the free-reset chip counts what is left, dashed when not usable yet; the summary names the accounts", () => {
-  const endsAt = Date.UTC(2026, 9, 22, 16); // 22 Oct 2026 16:00 UTC
-  const one = freeResetChip({ freeResets: { left: 1, usableNow: true, endsAt } });
-  expect(one).toContain("1 free reset<");
-  expect(one).not.toContain("later");
-  expect(one).toContain("CET");
-  const two = freeResetChip({ freeResets: { left: 2, usableNow: false, endsAt } });
-  expect(two).toContain("2 free resets");
-  expect(two).toContain("fr-chip later");
-  const accounts = [
-    { label: "ann@x.com", freeResets: { left: 1, usableNow: true, endsAt } },
-    { label: "bo@x.com", freeResets: null },
-    { label: "cy@x.com", freeResets: { left: 0, usableNow: true, endsAt } },
-  ];
-  expect(freeResetSummary([accounts[1]], null)).toBe("");
-  const line = freeResetSummary(accounts, {
-    dryHours: 111,
-    coveredHours: 108,
-    poolDryHours: 261,
-    poolDryHoursAfter: 153,
-  });
-  expect(line).toContain(
-    '<b>1</b> of <b>3</b> accounts have a free reset (<b class="fr-name">ann</b>)',
-  );
-  expect(line).toContain("all usable now");
-  expect(line).toContain("cover <b>108</b> of their <b>111</b> dry account-hours");
-  expect(line).toContain("from <b>261</b> to <b>153</b>");
-  expect(freeResetSummary(accounts, null)).not.toContain("dry account-hours");
-});
-
-test("the after-reset bar and the covers pill: all, part, none dry, spent now", () => {
-  const usedAt = Date.UTC(2026, 9, 5, 5);
-  const all = { usedAt, spentNow: false, dryHours: 70, coveredHours: 70, atReset: 12 };
-  expect(freeResetCovers(all)).toContain("covers all 70 h dry");
-  expect(freeResetCovers(all)).toContain("best used at run-out");
-  const part = { ...all, dryHours: 23, coveredHours: 20.4 };
-  expect(freeResetCovers(part)).toContain("covers 20 h of 23 h dry");
-  expect(freeResetCovers({ ...part, spentNow: true })).toContain("use now");
-  expect(freeResetCovers({ ...all, dryHours: 0, coveredHours: 0 })).toBe("");
-  expect(afterResetBar(all, "red")).toContain("↺ 0% → 12%");
-  expect(afterResetBar(all, "red")).toContain("width:12%");
 });
 
 test("an account with no burn is named in the banner, not counted as lasting", () => {

@@ -16,7 +16,6 @@
 
 import type { LimitHistory } from "./history";
 import type { PastLines, PoolDay } from "./past";
-import type { AccountFreeReset } from "./prifly-api";
 import { floorTo } from "./query";
 import type { AccountMeta, Reading, Window } from "./readings";
 
@@ -67,44 +66,12 @@ export type WindowState = {
   dryHours: number;
 };
 
-/**
- * What one free reset does for an account whose weekly limit runs dry: used
- * when it runs out (now, when it is spent), it puts the weekly limit back to
- * 0% and the account burns on at its rate until the weekly reset.
- */
-export type FreeResetEffect = {
-  /** When to use it: the run-out, or now for a spent account. */
-  usedAt: number;
-  spentNow: boolean;
-  /** The account's dry hours, which the reset is for. */
-  dryHours: number;
-  /** Of those, the hours the reset covers: 100% at the rate lasts 100 / rate hours. */
-  coveredHours: number;
-  /** The weekly percent at the weekly reset, after using it. */
-  atReset: number;
-};
-
-/** What the free resets do for the pool, in account-hours with no tokens. */
-export type FreeResetPool = {
-  /** The dry hours of the accounts that have a free reset. */
-  dryHours: number;
-  /** Of those, the hours their resets cover, each used as its account runs dry. */
-  coveredHours: number;
-  /** Every account's dry hours, the banner's number, and what is left of it after the resets. */
-  poolDryHours: number;
-  poolDryHoursAfter: number;
-};
-
 export type AccountForecast = {
   email: string;
   label: string;
   startsNewSessions: boolean;
-  /** Its free resets ("Reset for free", claude.ai Settings → Usage); null with none. */
-  freeResets: AccountFreeReset | null;
   /** The limits were not read in the latest answer: `weekly` and `session` come from the last readings. */
   stale: boolean;
-  /** What using a free reset when the account runs dry does; null without one, or without a rate. */
-  freeResetEffect: FreeResetEffect | null;
   /** null before the first reading. */
   weekly: WindowState | null;
   session: WindowState | null;
@@ -150,8 +117,6 @@ export type ForecastAnswer = {
    */
   grid: { from: number; step: number; pool: (number | null)[] };
   pool: PoolLine;
-  /** null when no account has a free reset with a rate to judge it by. */
-  freeResetPool: FreeResetPool | null;
   /** The past before the readings, from the transcripts: weekly windows and limit hits. */
   history: LimitHistory;
   /** The weekly % of `history`'s windows, reconstructed from their ends and their cost. */
@@ -358,40 +323,6 @@ function byAccount(readings: readonly Reading[]): Map<string, Record<Window, Rea
 const weeklyPoints = (own: Record<Window, Reading[]> | undefined): Point[] =>
   (own?.["7d"] ?? []).map((r) => [r.at, Math.min(100, r.usedPercent)]);
 
-/** What one free reset does for `weekly`, at its rate; null with no reset left or no rate. */
-export function freeResetEffect(
-  freeResets: AccountFreeReset | null,
-  weekly: WindowState | null,
-  now: number,
-): FreeResetEffect | null {
-  if (freeResets === null || freeResets.left <= 0) return null;
-  const rate = weekly?.forecastRate ?? null;
-  if (weekly === null || rate === null) return null;
-  const spentNow = weekly.outcome === "spent";
-  return {
-    usedAt: spentNow ? now : (weekly.runsOutAt ?? now),
-    spentNow,
-    dryHours: weekly.dryHours,
-    coveredHours: Math.min(weekly.dryHours, 100 / rate),
-    atReset: Math.min(100, rate * weekly.dryHours),
-  };
-}
-
-/** The resets' effect on the pool's dry hours (the sum the runway banner shows); null with none to judge. */
-export function freeResetPool(lines: readonly AccountForecast[]): FreeResetPool | null {
-  const effects = lines.flatMap((l) => (l.freeResetEffect === null ? [] : [l.freeResetEffect]));
-  if (effects.length === 0) return null;
-  const sum = (values: readonly number[]) => values.reduce((s, v) => s + v, 0);
-  const coveredHours = sum(effects.map((e) => e.coveredHours));
-  const poolDryHours = sum(lines.map((l) => l.weekly?.dryHours ?? 0));
-  return {
-    dryHours: sum(effects.map((e) => e.dryHours)),
-    coveredHours,
-    poolDryHours,
-    poolDryHoursAfter: poolDryHours - coveredHours,
-  };
-}
-
 /**
  * The average of the accounts' own weekly rates, where they have one: the
  * rate every weekly forecast runs at. null when none has a rate.
@@ -433,9 +364,7 @@ function accountLines(
     email: meta.email,
     label: meta.label,
     startsNewSessions: meta.startsNewSessions,
-    freeResets: meta.freeResets,
     stale: meta.stale,
-    freeResetEffect: freeResetEffect(meta.freeResets, weekly, now),
     weekly,
     session,
     measured,
@@ -529,7 +458,6 @@ export function forecast(
     averageRate: average,
     grid: { from, step: HOUR, pool },
     pool: { measured: poolMeasured(read, now), forecast: poolForecast(holdings, now + AHEAD) },
-    freeResetPool: freeResetPool(lines),
     firstAt: readings[0]?.at ?? null,
   };
 }
