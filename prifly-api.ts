@@ -209,31 +209,6 @@ export type PanelRequest = {
   body: unknown;
 };
 
-/** A cloud session of one of the Claude accounts connected to prifly. */
-export type CloudSessionInfo = {
-  id: string;
-  /** The account that created it, and the only one that can read it back. */
-  account: string;
-  title: string;
-  /** The repository its sandbox cloned, `https://github.com/o/r`, or "". */
-  repo: string;
-  model: string;
-  /** Epoch ms. */
-  createdAt: number;
-  updatedAt: number;
-};
-
-/** The sessions on Anthropic's side, for an extension that reports on them. */
-export type ExtensionCloud = {
-  /** Every cloud session of every connected account; an account that cannot be read is left out. */
-  sessions(): Promise<CloudSessionInfo[]>;
-  /**
-   * A cloud session's transcript: Claude Code's own stored lines, the same
-   * shape as a local `~/.claude/projects` JSONL file's, oldest first.
-   */
-  transcript(account: string, sessionId: string): Promise<unknown[]>;
-};
-
 /** A session the host knows, for an extension to match its things against. */
 export type ExtensionSession = { id: string; title: string; cwd: string; state: string };
 
@@ -305,8 +280,6 @@ export type ExtensionApi = {
    * Python; the extension ships neither).
    */
   paths: readonly string[];
-  /** The cloud sessions of the accounts connected to prifly, read with their own tokens. */
-  cloud: ExtensionCloud;
   /**
    * The Claude accounts prifly holds and their plan limits, from the host's
    * usage pollers' memory — no network; a new reading at most every ~5 min.

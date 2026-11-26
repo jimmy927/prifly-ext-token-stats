@@ -5,8 +5,7 @@
  *
  * Local sessions are read from `~/.claude/projects` by a worker thread
  * (`scan-worker.ts`), with prifly's copy of the other machines' on this
- * laptop — a WSL distribution's, for a host on Windows; remote ones through prifly's cloud access
- * (`remote.ts`). The window's page (`panel/`) asks `api/stats` for each view
+ * laptop — a WSL distribution's, for a host on Windows. The window's page (`panel/`) asks `api/stats` for each view
  * and `api/status` for how far the reading has got.
  *
  * The Code view asks `api/code`: the same spend beside the lines of code each
@@ -27,13 +26,11 @@ import { limitHistory } from "./history";
 import { limitWeight, reconstructPast, withPast } from "./past";
 import type { ExtensionApi, PanelRequest } from "./prifly-api";
 import { Readings } from "./readings";
-import { RemoteSessions } from "./remote";
 import type { FileOut, ScanProgress, ScanReply, ScanRequest } from "./scan-worker";
 import { type Batch, buildColumns } from "./store";
 import { checkoutsOf, homeOf, knowFolders, lookAtFoldersElsewhere, NO_REPO } from "./where";
 
 const LOCAL_EVERY = 60_000;
-const REMOTE_EVERY = 10 * 60_000;
 /** How long the Code view waits for a git read before answering without it. */
 const CODE_WAIT_MS = 1500;
 /** A git read that ended this recently is not run again for the Code view. */
@@ -46,7 +43,6 @@ type Running = {
   local: Map<string, FileOut>;
   /** Transcripts Claude Code has deleted, kept by the worker: counted like the live ones. */
   archived: Map<string, FileOut>;
-  remote: RemoteSessions;
   answerer: Answerer | null;
   scanning: Promise<void> | null;
   resolveScan: (() => void) | null;
@@ -116,9 +112,7 @@ function mirrorHomes(mirrors: string | undefined, files: FileOut[]): Map<string,
 
 function answerer(state: Running): Answerer {
   if (state.answerer === null) {
-    state.answerer = new Answerer(
-      buildColumns([...localBatches(state), ...state.remote.batches()]),
-    );
+    state.answerer = new Answerer(buildColumns(localBatches(state)));
   }
   return state.answerer;
 }
@@ -164,10 +158,6 @@ function received(state: Running, reply: ScanReply, log: ExtensionApi["log"]): v
   state.resolveScan?.();
   state.resolveScan = null;
   if (state.codeAsked) void readGit(state);
-}
-
-async function scanRemote(state: Running): Promise<void> {
-  if (await state.remote.refresh()) state.answerer = null;
 }
 
 function readLimits(state: Running): void {
@@ -236,7 +226,6 @@ export function activate(api: ExtensionApi): () => void {
     worker,
     local: new Map(),
     archived: new Map(),
-    remote: new RemoteSessions(api.cloud, join(api.folder, "cache", "remote.json"), api.log),
     answerer: null,
     scanning: null,
     resolveScan: null,
@@ -276,15 +265,11 @@ export function activate(api: ExtensionApi): () => void {
   void state.git.load();
   readLimits(state);
   void scanLocal(state);
-  const remoteSoon = setTimeout(() => void scanRemote(state), 5_000);
   const localTimer = setInterval(() => void scanLocal(state), LOCAL_EVERY);
-  const remoteTimer = setInterval(() => void scanRemote(state), REMOTE_EVERY);
   const readingsTimer = setInterval(() => readLimits(state), READINGS_EVERY);
   return () => {
     clearInterval(readingsTimer);
-    clearTimeout(remoteSoon);
     clearInterval(localTimer);
-    clearInterval(remoteTimer);
     worker.terminate();
     running = null;
   };
@@ -299,11 +284,6 @@ function status(state: Running) {
     local: state.lastScan,
     sessions: state.local.size,
     archived: state.archived.size,
-    remote: {
-      sessions: state.remote.count,
-      readAt: state.remote.readAt,
-      error: state.remote.error,
-    },
   };
 }
 
@@ -315,7 +295,7 @@ export async function panel(_panelId: string, request: PanelRequest): Promise<un
       return status(state);
     case "refresh":
       readLimits(state);
-      await Promise.all([scanLocal(state), scanRemote(state)]);
+      await scanLocal(state);
       await readGit(state);
       return status(state);
     case "forecast":
