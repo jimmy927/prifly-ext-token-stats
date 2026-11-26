@@ -24,7 +24,6 @@ const account = (readAt: number | null, weekly: number): AccountInfo => ({
   label: "Work",
   startsNewSessions: true,
   readAt,
-  freeResets: null,
   limits:
     readAt === null
       ? []
@@ -73,7 +72,6 @@ test("only a newer readAt is appended, one reading per followed limit", () => {
       label: "Work",
       startsNewSessions: true,
       windowMs: { "5h": 5 * 3.6e6, "7d": 7 * DAY },
-      freeResets: null,
       stale: false,
     },
   ]);
@@ -164,11 +162,4 @@ test("a login keeps one email and one history when the newest machine, and its e
   expect(readings.accounts[0]?.windowMs["7d"]).toBe(7 * DAY);
   expect(new Set(readings.all().map((r) => r.email))).toEqual(new Set(["a@x.com"]));
   expect(readings.all().filter((r) => r.label === "5h")).toHaveLength(2);
-});
-
-test("an account from a prifly that predates free resets has none, not undefined", () => {
-  const readings = new Readings(fileIn());
-  const { freeResets: _, ...old } = account(NOW, 40);
-  readings.take([old as AccountInfo], NOW);
-  expect(readings.accounts[0]?.freeResets).toBeNull();
 });
