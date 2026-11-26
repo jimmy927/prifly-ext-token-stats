@@ -101,7 +101,7 @@ export class Readings {
 
   /** Take what `accounts()` answered; returns how many readings were added. */
   take(accounts: AccountInfo[], now: number): number {
-    const before = new Map(this.accounts.map((meta) => [meta.email, meta]));
+    const before = new Map(this.accounts.map((meta) => [meta.email.toLowerCase(), meta]));
     // One entry per (email, machine): the weekly limit belongs to the email, so
     // the machines of one login are one account, read from its newest entry.
     const groups = new Map<string, AccountInfo[]>();
@@ -109,45 +109,50 @@ export class Readings {
       const key = account.email.toLowerCase();
       groups.set(key, [...(groups.get(key) ?? []), account]);
     }
-    const newest = [...groups.values()].map((group) => ({
+    const newest = [...groups.entries()].map(([key, group]) => ({
       group,
       account: group.reduce((best, a) => ((a.readAt ?? -1) > (best.readAt ?? -1) ? a : best)),
+      // One spelling per login, so a change of newest machine never splits it:
+      // the one shown before, else the first seen.
+      email: before.get(key)?.email ?? group[0]?.email ?? key,
     }));
-    this.accounts = newest.map(({ group, account }) => {
+    this.accounts = newest.map(({ group, account, email }) => {
       const followed = account.limits.filter((l) => isWindow(l.label));
       const windowMs: AccountMeta["windowMs"] = {
-        ...before.get(account.email)?.windowMs,
+        ...before.get(email.toLowerCase())?.windowMs,
         ...Object.fromEntries(
-          group.flatMap((a) =>
+          // The chosen entry last, so its lengths win over the other machines'.
+          [...group.filter((a) => a !== account), account].flatMap((a) =>
             a.limits.filter((l) => isWindow(l.label)).map((l) => [l.label, l.windowMs]),
           ),
         ),
       };
       return {
-        email: account.email,
+        email,
         label: account.label,
         startsNewSessions: group.some((a) => a.startsNewSessions),
         windowMs,
         // As answered: null is also how prifly says "none", so a kept one could outlive its grant.
         // A prifly older than free resets leaves the field out: that is "none" too.
+        // From the chosen entry only: the other machines' answers are older.
         freeResets: account.freeResets ?? null,
-        stale: (account.readAt === null || followed.length === 0) && this.latest.has(account.email),
+        stale: (account.readAt === null || followed.length === 0) && this.latest.has(email),
       };
     });
     const added: Reading[] = [];
-    for (const { account } of newest) {
-      if (account.readAt === null || account.readAt <= this.latestOf(account.email)) continue;
+    for (const { account, email } of newest) {
+      if (account.readAt === null || account.readAt <= this.latestOf(email)) continue;
       for (const limit of account.limits) {
         if (!isWindow(limit.label)) continue;
         added.push({
           at: account.readAt,
-          email: account.email,
+          email,
           label: limit.label,
           usedPercent: limit.usedPercent,
           resetsAt: limit.resetsAt,
         });
       }
-      this.latest.set(account.email, account.readAt);
+      this.latest.set(email, account.readAt);
     }
     if (added.length > 0) {
       this.readings.push(...added);

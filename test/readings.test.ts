@@ -150,6 +150,22 @@ test("one account per email across machines: the newest of two readings wins, em
   expect(weekly.map((r) => r.usedPercent)).toEqual([55]);
 });
 
+test("a login keeps one email and one history when the newest machine, and its email case, changes", () => {
+  const readings = new Readings(fileIn());
+  const first = account(NOW - 2000, 40);
+  const second = { ...account(NOW - 1000, 41), email: "A@X.com" };
+  const failed = (a: AccountInfo): AccountInfo => ({ ...a, readAt: null, limits: [] });
+  readings.take([first, failed(second)], NOW);
+  // The newest entry is now the other machine's, with the other case, and only the 5h limit.
+  const fiveHourOnly = { ...second, limits: second.limits.filter((l) => l.label === "5h") };
+  readings.take([failed(first), fiveHourOnly], NOW);
+  expect(readings.accounts).toHaveLength(1);
+  expect(readings.accounts[0]?.email).toBe("a@x.com");
+  expect(readings.accounts[0]?.windowMs["7d"]).toBe(7 * DAY);
+  expect(new Set(readings.all().map((r) => r.email))).toEqual(new Set(["a@x.com"]));
+  expect(readings.all().filter((r) => r.label === "5h")).toHaveLength(2);
+});
+
 test("an account from a prifly that predates free resets has none, not undefined", () => {
   const readings = new Readings(fileIn());
   const { freeResets: _, ...old } = account(NOW, 40);
